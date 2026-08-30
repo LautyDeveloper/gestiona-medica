@@ -22,6 +22,11 @@ export const personSchema = z.object({
   notes: optionalText(1000),
 });
 
+export const personArchiveSchema = z.object({
+  id: z.uuid(),
+  archived: z.boolean(),
+});
+
 export const appointmentSchema = z.object({
   personId: z.uuid().optional(),
   specialty: cleanText('La especialidad', 100),
@@ -63,7 +68,10 @@ export const recordSchemas = {
   task: taskSchema,
 };
 
-const personBackupSchema = personSchema.extend({ id: z.uuid() });
+const personBackupV1Schema = personSchema.extend({ id: z.uuid() });
+const personBackupSchema = personBackupV1Schema.extend({
+  archived: z.boolean().default(false),
+});
 const appointmentBackupSchema = appointmentSchema.extend({
   id: z.uuid(),
   personId: z.uuid(),
@@ -77,14 +85,18 @@ const taskBackupSchema = taskSchema.extend({
   personId: z.uuid(),
 });
 
-export const backupSchema = z
+const backupRecordsSchema = {
+  appointments: z.array(appointmentBackupSchema).max(10000),
+  medications: z.array(medicationBackupSchema).max(10000),
+  tasks: z.array(taskBackupSchema).max(10000),
+};
+
+export const backupV1Schema = z
   .object({
     schemaVersion: z.literal(1),
     exportedAt: z.iso.datetime(),
-    person: personBackupSchema,
-    appointments: z.array(appointmentBackupSchema).max(10000),
-    medications: z.array(medicationBackupSchema).max(10000),
-    tasks: z.array(taskBackupSchema).max(10000),
+    person: personBackupV1Schema,
+    ...backupRecordsSchema,
   })
   .superRefine((backup, context) => {
     const records = [
@@ -105,6 +117,57 @@ export const backupSchema = z
         message: 'El respaldo contiene identificadores duplicados',
       });
     }
+  });
+
+export const backupSchema = z
+  .object({
+    schemaVersion: z.literal(2),
+    exportedAt: z.iso.datetime(),
+    persons: z.array(personBackupSchema).min(1).max(1000),
+    ...backupRecordsSchema,
+  })
+  .superRefine((backup, context) => {
+    const personIds = backup.persons.map((person) => person.id);
+    if (new Set(personIds).size !== personIds.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'El respaldo contiene personas duplicadas',
+      });
+    }
+    const knownPeople = new Set(personIds);
+    const records = [
+      ...backup.appointments,
+      ...backup.medications,
+      ...backup.tasks,
+    ];
+    if (records.some((record) => !knownPeople.has(record.personId))) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'El respaldo contiene registros asociados a una persona inexistente',
+      });
+    }
+    const ids = records.map((record) => record.id);
+    if (new Set(ids).size !== ids.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'El respaldo contiene identificadores duplicados',
+      });
+    }
+  });
+
+export const backupImportSchema = z
+  .union([backupV1Schema, backupSchema])
+  .transform((backup) => {
+    if (backup.schemaVersion === 2) return backup;
+    return {
+      schemaVersion: 2 as const,
+      exportedAt: backup.exportedAt,
+      persons: [{ ...backup.person, archived: false }],
+      appointments: backup.appointments,
+      medications: backup.medications,
+      tasks: backup.tasks,
+    };
   });
 
 export function fieldErrors(error: z.ZodError) {

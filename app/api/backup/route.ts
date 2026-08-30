@@ -7,7 +7,7 @@ import type {
   Medication,
   Person,
 } from '@/lib/models';
-import { backupSchema, fieldErrors } from '@/lib/validation';
+import { backupImportSchema, fieldErrors } from '@/lib/validation';
 
 function error(message: string, status: number, details?: unknown) {
   return NextResponse.json({ error: message, details }, { status });
@@ -16,36 +16,37 @@ function error(message: string, status: number, details?: unknown) {
 export async function GET() {
   try {
     const db = getD1();
-    const person = await db
-      .prepare(
-        'SELECT id, name, birth_date AS birthDate, relationship, notes FROM persons LIMIT 1',
-      )
-      .first<Person>();
-    if (!person) return error('No hay datos para respaldar', 404);
-    const [appointments, medications, tasks] = await Promise.all([
+    const [people, appointments, medications, tasks] = await Promise.all([
       db
         .prepare(
-          'SELECT id, person_id AS personId, specialty, doctor, date, time, place, bring, notes, status FROM appointments WHERE person_id = ? ORDER BY date, time',
+          'SELECT id, name, birth_date AS birthDate, relationship, notes, archived FROM persons ORDER BY archived, name COLLATE NOCASE',
         )
-        .bind(person.id)
+        .all<Omit<Person, 'archived'> & { archived: number }>(),
+      db
+        .prepare(
+          'SELECT id, person_id AS personId, specialty, doctor, date, time, place, bring, notes, status FROM appointments ORDER BY person_id, date, time',
+        )
         .all<Appointment>(),
       db
         .prepare(
-          'SELECT id, person_id AS personId, name, dose, frequency, doctor, notes, active FROM medications WHERE person_id = ? ORDER BY name',
+          'SELECT id, person_id AS personId, name, dose, frequency, doctor, notes, active FROM medications ORDER BY person_id, name',
         )
-        .bind(person.id)
         .all<Omit<Medication, 'active'> & { active: number }>(),
       db
         .prepare(
-          'SELECT id, person_id AS personId, title, due_date AS dueDate, priority, status, notes FROM tasks WHERE person_id = ? ORDER BY due_date',
+          'SELECT id, person_id AS personId, title, due_date AS dueDate, priority, status, notes FROM tasks ORDER BY person_id, due_date',
         )
-        .bind(person.id)
         .all<MedicalTask>(),
     ]);
+    if (!people.results.length)
+      return error('No hay datos para respaldar', 404);
     const backup: BackupData = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       exportedAt: new Date().toISOString(),
-      person,
+      persons: people.results.map((person) => ({
+        ...person,
+        archived: Boolean(person.archived),
+      })),
       appointments: appointments.results,
       medications: medications.results.map((item) => ({
         ...item,
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
     const contentLength = Number(request.headers.get('content-length') || 0);
     if (contentLength > 5_000_000)
       return error('El archivo supera el límite de 5 MB', 400);
-    const parsed = backupSchema.safeParse(await request.json());
+    const parsed = backupImportSchema.safeParse(await request.json());
     if (!parsed.success)
       return error(
         'El respaldo no es válido o no es compatible',
@@ -83,17 +84,20 @@ export async function POST(request: Request) {
       db.prepare('DELETE FROM medications'),
       db.prepare('DELETE FROM tasks'),
       db.prepare('DELETE FROM persons'),
-      db
-        .prepare(
-          'INSERT INTO persons (id, name, birth_date, relationship, notes) VALUES (?, ?, ?, ?, ?)',
-        )
-        .bind(
-          backup.person.id,
-          backup.person.name,
-          backup.person.birthDate,
-          backup.person.relationship,
-          backup.person.notes,
-        ),
+      ...backup.persons.map((person) =>
+        db
+          .prepare(
+            'INSERT INTO persons (id, name, birth_date, relationship, notes, archived) VALUES (?, ?, ?, ?, ?, ?)',
+          )
+          .bind(
+            person.id,
+            person.name,
+            person.birthDate,
+            person.relationship,
+            person.notes,
+            person.archived ? 1 : 0,
+          ),
+      ),
       ...backup.appointments.map((item) =>
         db
           .prepare(

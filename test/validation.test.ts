@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   appointmentSchema,
+  backupImportSchema,
   backupSchema,
   medicationSchema,
   personSchema,
@@ -8,6 +9,7 @@ import {
 } from '@/lib/validation';
 
 const personId = '11111111-1111-4111-8111-111111111111';
+const secondPersonId = '33333333-3333-4333-8333-333333333333';
 const recordId = '22222222-2222-4222-8222-222222222222';
 
 describe('validaciones', () => {
@@ -36,8 +38,7 @@ describe('validaciones', () => {
     ).toBe(false);
     vi.useRealTimers();
   });
-
-  it('exige todos los datos operativos de un turno', () => {
+  it('exige todos los datos operativos de un turno', () =>
     expect(
       appointmentSchema.safeParse({
         specialty: '',
@@ -47,9 +48,7 @@ describe('validaciones', () => {
         place: '',
         bring: '',
       }).success,
-    ).toBe(false);
-  });
-
+    ).toBe(false));
   it('acepta medicamento y pendiente válidos', () => {
     expect(
       medicationSchema.safeParse({
@@ -73,51 +72,84 @@ describe('validaciones', () => {
   });
 });
 
-describe('respaldo', () => {
+describe('respaldo multi-persona', () => {
+  const appointment = {
+    id: recordId,
+    personId,
+    specialty: 'Clínica',
+    doctor: 'Dra. Pérez',
+    date: '2026-09-01',
+    time: '10:00',
+    place: 'Hospital',
+    bring: 'DNI',
+    notes: '',
+    status: 'Próximo' as const,
+  };
   const valid = {
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     exportedAt: '2026-08-30T12:00:00.000Z',
-    person: {
-      id: personId,
-      name: 'Ana',
-      birthDate: '1980-01-10',
-      relationship: 'Madre',
-      notes: '',
-    },
-    appointments: [
+    persons: [
       {
-        id: recordId,
-        personId,
-        specialty: 'Clínica',
-        doctor: 'Dra. Pérez',
-        date: '2026-09-01',
-        time: '10:00',
-        place: 'Hospital',
-        bring: 'DNI',
+        id: personId,
+        name: 'Ana',
+        birthDate: '1980-01-10',
+        relationship: 'Madre',
         notes: '',
-        status: 'Próximo' as const,
+        archived: false,
+      },
+      {
+        id: secondPersonId,
+        name: 'Luis',
+        birthDate: '1978-03-04',
+        relationship: 'Padre',
+        notes: '',
+        archived: true,
       },
     ],
+    appointments: [appointment],
     medications: [],
     tasks: [],
   };
 
-  it('acepta una copia íntegra versionada', () =>
+  it('acepta una copia íntegra con perfiles activos y archivados', () =>
     expect(backupSchema.safeParse(valid).success).toBe(true));
+  it('convierte respaldos de Sprint 1 a versión 2', () => {
+    const legacy = {
+      schemaVersion: 1,
+      exportedAt: valid.exportedAt,
+      person: {
+        id: personId,
+        name: 'Ana',
+        birthDate: '1980-01-10',
+        relationship: 'Madre',
+        notes: '',
+      },
+      appointments: [appointment],
+      medications: [],
+      tasks: [],
+    };
+    const parsed = backupImportSchema.parse(legacy);
+    expect(parsed.schemaVersion).toBe(2);
+    expect(parsed.persons).toEqual([{ ...legacy.person, archived: false }]);
+  });
   it('rechaza versiones desconocidas', () =>
-    expect(backupSchema.safeParse({ ...valid, schemaVersion: 2 }).success).toBe(
-      false,
-    ));
-  it('rechaza registros asociados a otra persona', () =>
+    expect(
+      backupImportSchema.safeParse({ ...valid, schemaVersion: 3 }).success,
+    ).toBe(false));
+  it('rechaza registros asociados a personas inexistentes', () =>
     expect(
       backupSchema.safeParse({
         ...valid,
         appointments: [
-          {
-            ...valid.appointments[0],
-            personId: '33333333-3333-4333-8333-333333333333',
-          },
+          { ...appointment, personId: '44444444-4444-4444-8444-444444444444' },
         ],
+      }).success,
+    ).toBe(false));
+  it('rechaza personas duplicadas', () =>
+    expect(
+      backupSchema.safeParse({
+        ...valid,
+        persons: [...valid.persons, valid.persons[0]],
       }).success,
     ).toBe(false));
   it('rechaza identificadores repetidos entre colecciones', () =>
