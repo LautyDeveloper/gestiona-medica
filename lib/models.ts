@@ -1,13 +1,58 @@
-export type Section = 'home' | 'appointments' | 'medications' | 'tasks';
+export type Section =
+  | 'home'
+  | 'appointments'
+  | 'medications'
+  | 'tasks'
+  | 'group';
 export type Entity = 'appointment' | 'medication' | 'task';
+export type MembershipRole = 'admin' | 'member';
+
+export interface AppUser {
+  id: string;
+  username: string;
+  displayName: string;
+  email: string;
+}
+export interface CareGroup {
+  id: string;
+  name: string;
+  role: MembershipRole;
+  memberCount: number;
+  personCount: number;
+}
+export interface GroupMember {
+  id: string;
+  username: string;
+  displayName: string;
+  email: string;
+  role: MembershipRole;
+}
+export interface GroupInvitation {
+  id: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'revoked' | 'expired';
+  expiresAt: string;
+  createdByName: string;
+}
+export interface SessionData {
+  user: AppUser;
+  groups: CareGroup[];
+}
+export interface GroupData {
+  group: CareGroup;
+  members: GroupMember[];
+  invitations: GroupInvitation[];
+  persons: Pick<Person, 'id' | 'name' | 'archived'>[];
+}
 
 export interface Person {
   id: string;
+  careGroupId?: string;
   name: string;
   birthDate: string;
   relationship: string;
   notes: string;
   archived: boolean;
+  version?: number;
 }
 
 export interface PersonSummary extends Person {
@@ -26,6 +71,7 @@ export interface Appointment {
   bring: string;
   notes: string;
   status: 'Próximo' | 'Realizado' | 'Cancelado';
+  version?: number;
 }
 export interface Medication {
   id: string;
@@ -36,6 +82,7 @@ export interface Medication {
   doctor: string;
   notes: string;
   active: boolean;
+  version?: number;
 }
 export interface MedicalTask {
   id: string;
@@ -45,6 +92,7 @@ export interface MedicalTask {
   priority: 'Normal' | 'Importante' | 'Urgente';
   status: 'Pendiente' | 'Completado';
   notes: string;
+  version?: number;
 }
 export interface AppData {
   person: Person | null;
@@ -60,17 +108,18 @@ export interface PeopleData {
 export interface BackupDataV1 {
   schemaVersion: 1;
   exportedAt: string;
-  person: Omit<Person, 'archived'>;
-  appointments: Appointment[];
-  medications: Medication[];
-  tasks: MedicalTask[];
+  person: Omit<Person, 'archived' | 'careGroupId' | 'version'>;
+  appointments: Omit<Appointment, 'version'>[];
+  medications: Omit<Medication, 'version'>[];
+  tasks: Omit<MedicalTask, 'version'>[];
 }
 
 export interface BackupData {
-  schemaVersion: 2;
+  schemaVersion: 3;
   exportedAt: string;
-  persons: Person[];
-  appointments: Appointment[];
-  medications: Medication[];
-  tasks: MedicalTask[];
+  careGroup: { name: string };
+  persons: Omit<Person, 'careGroupId' | 'version'>[];
+  appointments: Omit<Appointment, 'version'>[];
+  medications: Omit<Medication, 'version'>[];
+  tasks: Omit<MedicalTask, 'version'>[];
 }

@@ -113,7 +113,7 @@ describe('respaldo multi-persona', () => {
 
   it('acepta una copia íntegra con perfiles activos y archivados', () =>
     expect(backupSchema.safeParse(valid).success).toBe(true));
-  it('convierte respaldos de Sprint 1 a versión 2', () => {
+  it('convierte respaldos de Sprint 1 a versión 3', () => {
     const legacy = {
       schemaVersion: 1,
       exportedAt: valid.exportedAt,
@@ -129,12 +129,12 @@ describe('respaldo multi-persona', () => {
       tasks: [],
     };
     const parsed = backupImportSchema.parse(legacy);
-    expect(parsed.schemaVersion).toBe(2);
+    expect(parsed.schemaVersion).toBe(3);
     expect(parsed.persons).toEqual([{ ...legacy.person, archived: false }]);
   });
   it('rechaza versiones desconocidas', () =>
     expect(
-      backupImportSchema.safeParse({ ...valid, schemaVersion: 3 }).success,
+      backupImportSchema.safeParse({ ...valid, schemaVersion: 99 }).success,
     ).toBe(false));
   it('rechaza registros asociados a personas inexistentes', () =>
     expect(
@@ -166,6 +166,25 @@ describe('respaldo multi-persona', () => {
             status: 'Pendiente',
             notes: '',
           },
+        ],
+      }).success,
+    ).toBe(false));
+  it('acepta respaldo versión 3 con metadatos del grupo', () =>
+    expect(
+      backupImportSchema.safeParse({
+        ...valid,
+        schemaVersion: 3,
+        careGroup: { name: 'Familia Pérez' },
+      }).success,
+    ).toBe(true));
+  it('rechaza referencias inválidas también en versión 3', () =>
+    expect(
+      backupImportSchema.safeParse({
+        ...valid,
+        schemaVersion: 3,
+        careGroup: { name: 'Familia Pérez' },
+        appointments: [
+          { ...appointment, personId: '44444444-4444-4444-8444-444444444444' },
         ],
       }).success,
     ).toBe(false));
