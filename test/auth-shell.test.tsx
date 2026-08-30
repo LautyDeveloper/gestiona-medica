@@ -30,6 +30,10 @@ describe('acceso familiar simple', () => {
     expect(
       await screen.findByText('Configurá el primer cuidador'),
     ).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/session',
+      expect.anything(),
+    );
     await userEvent.type(screen.getByLabelText('Tu nombre'), 'Lautaro');
     await userEvent.type(screen.getByLabelText('Usuario'), 'lautaro');
     await userEvent.type(screen.getByLabelText('Contraseña'), password);
@@ -41,6 +45,28 @@ describe('acceso familiar simple', () => {
       '/api/auth/bootstrap',
       expect.objectContaining({ method: 'POST' }),
     );
+  });
+
+  it('no muestra un login engañoso si falla la comprobación inicial', async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json({ error: 'No disponible' }, { status: 500 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    render(
+      <AuthShell>
+        <p>Aplicación</p>
+      </AuthShell>,
+    );
+
+    expect(
+      await screen.findByText('No pudimos comprobar el acceso'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Reintentar' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Iniciar sesión' }),
+    ).not.toBeInTheDocument();
   });
 
   it('muestra login cuando el setup ya está cerrado', async () => {

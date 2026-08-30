@@ -7,7 +7,10 @@ export async function GET() {
   const row = await getD1()
     .prepare('SELECT COUNT(*) AS count FROM users')
     .first<{ count: number }>();
-  return Response.json({ setupRequired: Number(row?.count || 0) === 0 });
+  return Response.json(
+    { setupRequired: Number(row?.count || 0) === 0 },
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
 }
 
 export async function POST(request: Request) {
@@ -15,7 +18,10 @@ export async function POST(request: Request) {
     const parsed = bootstrapSchema.safeParse(await request.json());
     if (!parsed.success)
       return Response.json(
-        { error: 'Revisá los datos ingresados', details: fieldErrors(parsed.error) },
+        {
+          error: 'Revisá los datos ingresados',
+          details: fieldErrors(parsed.error),
+        },
         { status: 400 },
       );
     const db = getD1();

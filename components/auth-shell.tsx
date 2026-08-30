@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
-import { KeyRound, LogIn, ShieldCheck } from 'lucide-react';
+import { KeyRound, LogIn, RefreshCw, ShieldCheck } from 'lucide-react';
 import { AppLoading } from '@/components/app-feedback';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,7 +21,24 @@ export function useLocalAuth() {
   );
 }
 
-type Mode = 'loading' | 'login' | 'bootstrap' | 'authenticated';
+type Mode = 'loading' | 'login' | 'bootstrap' | 'authenticated' | 'error';
+
+async function resolveAccessMode(): Promise<Mode> {
+  const bootstrapResponse = await fetch('/api/auth/bootstrap', {
+    cache: 'no-store',
+  });
+  if (!bootstrapResponse.ok) throw new Error('bootstrap');
+  const status = (await bootstrapResponse.json()) as {
+    setupRequired?: boolean;
+  };
+  if (typeof status.setupRequired !== 'boolean') throw new Error('status');
+  if (status.setupRequired) return 'bootstrap';
+
+  const session = await fetch('/api/session', { cache: 'no-store' });
+  if (session.ok) return 'authenticated';
+  if (session.status === 401) return 'login';
+  throw new Error('session');
+}
 
 export function AuthShell({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<Mode>('loading');
@@ -33,21 +50,11 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
   const [groupName, setGroupName] = useState('Grupo familiar');
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/auth/bootstrap').then((response) =>
-        response.json(),
-      ) as Promise<{
-        setupRequired: boolean;
-      }>,
-      fetch('/api/session'),
-    ])
-      .then(async ([status, session]) => {
-        if (session.ok) setMode('authenticated');
-        else setMode(status.setupRequired ? 'bootstrap' : 'login');
-      })
+    void resolveAccessMode()
+      .then(setMode)
       .catch(() => {
-        setError('No pudimos comprobar el acceso. Recargá la página.');
-        setMode('login');
+        setError('No pudimos comprobar el acceso. Intentá nuevamente.');
+        setMode('error');
       });
   }, []);
 
@@ -86,6 +93,48 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
   if (mode === 'authenticated')
     return (
       <AuthContext.Provider value={{ logout }}>{children}</AuthContext.Provider>
+    );
+  if (mode === 'error')
+    return (
+      <main className="grid min-h-dvh place-items-center bg-background px-5 text-foreground">
+        <section className="w-full max-w-md rounded-3xl border bg-card p-8 shadow-xl">
+          <div className="grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground">
+            <KeyRound />
+          </div>
+          <p className="mt-7 text-xs font-medium uppercase tracking-[.16em] text-muted-foreground">
+            Cerca · Acceso familiar
+          </p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+            No pudimos comprobar el acceso
+          </h1>
+          <p
+            role="alert"
+            className="mt-3 text-sm leading-6 text-muted-foreground"
+          >
+            {error}
+          </p>
+          <Button
+            type="button"
+            size="lg"
+            className="mt-6 w-full"
+            onClick={() => {
+              setMode('loading');
+              setError('');
+              void resolveAccessMode()
+                .then(setMode)
+                .catch(() => {
+                  setError(
+                    'No pudimos comprobar el acceso. Intentá nuevamente.',
+                  );
+                  setMode('error');
+                });
+            }}
+          >
+            <RefreshCw />
+            Reintentar
+          </Button>
+        </section>
+      </main>
     );
   return (
     <main className="grid min-h-dvh place-items-center bg-background px-5 text-foreground">
