@@ -6,6 +6,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "predev": "npm run db:migrate:local",
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
@@ -13,7 +14,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "oxfmt",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "db:studio": "drizzle-kit studio",
+    "db:migrate:local": "node scripts/local-db.mjs migrate",
+    "db:status:local": "node scripts/local-db.mjs status"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",

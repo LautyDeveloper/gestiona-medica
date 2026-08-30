@@ -1,16 +1,29 @@
 import { getD1 } from '@/db';
+import { getBootstrapStatus } from '@/lib/bootstrap-status';
 import { hashPassword } from '@/lib/password';
 import { authError, createSession } from '@/lib/server-auth';
 import { bootstrapSchema, fieldErrors } from '@/lib/validation';
 
 export async function GET() {
-  const row = await getD1()
-    .prepare('SELECT COUNT(*) AS count FROM users')
-    .first<{ count: number }>();
-  return Response.json(
-    { setupRequired: Number(row?.count || 0) === 0 },
-    { headers: { 'Cache-Control': 'no-store' } },
-  );
+  try {
+    return Response.json(await getBootstrapStatus(getD1()), {
+      headers: { 'Cache-Control': 'no-store' },
+    });
+  } catch (error) {
+    console.error(
+      'Bootstrap status check failed',
+      error instanceof Error
+        ? { name: error.name, message: error.message, stack: error.stack }
+        : { type: typeof error },
+    );
+    return Response.json(
+      {
+        error: 'La base de datos no está preparada o no está disponible',
+        code: 'DATABASE_UNAVAILABLE',
+      },
+      { status: 503, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
 }
 
 export async function POST(request: Request) {
@@ -25,12 +38,19 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     const db = getD1();
-    const existing = await db
-      .prepare('SELECT COUNT(*) AS count FROM users')
-      .first<{ count: number }>();
-    if (Number(existing?.count || 0) > 0)
+    const status = await getBootstrapStatus(db);
+    if (status.state !== 'setup-required')
       return Response.json(
-        { error: 'La configuración inicial ya fue completada' },
+        {
+          error:
+            status.state === 'invalid'
+              ? 'La configuración de acceso está incompleta. Revisá la base de datos local.'
+              : 'La configuración inicial ya fue completada',
+          code:
+            status.state === 'invalid'
+              ? 'AUTH_CONFIGURATION_INVALID'
+              : 'BOOTSTRAP_ALREADY_COMPLETED',
+        },
         { status: 409 },
       );
     const currentGroup = await db

@@ -27,12 +27,31 @@ async function resolveAccessMode(): Promise<Mode> {
   const bootstrapResponse = await fetch('/api/auth/bootstrap', {
     cache: 'no-store',
   });
-  if (!bootstrapResponse.ok) throw new Error('bootstrap');
-  const status = (await bootstrapResponse.json()) as {
+  const status = (await bootstrapResponse.json().catch(() => ({}))) as {
+    state?: 'setup-required' | 'ready' | 'invalid';
     setupRequired?: boolean;
+    error?: string;
+    code?: string;
   };
-  if (typeof status.setupRequired !== 'boolean') throw new Error('status');
-  if (status.setupRequired) return 'bootstrap';
+  if (!bootstrapResponse.ok)
+    throw new Error(
+      status.code === 'DATABASE_UNAVAILABLE'
+        ? 'La base de datos no está preparada o no está disponible. Reiniciá la aplicación para aplicar las migraciones.'
+        : status.error || 'No pudimos comprobar el acceso.',
+    );
+  const state =
+    status.state ||
+    (status.setupRequired === true
+      ? 'setup-required'
+      : status.setupRequired === false
+        ? 'ready'
+        : undefined);
+  if (!state) throw new Error('La respuesta de acceso no es válida.');
+  if (state === 'invalid')
+    throw new Error(
+      'La configuración de acceso está incompleta. Revisá los usuarios, grupos y permisos de la base local.',
+    );
+  if (state === 'setup-required') return 'bootstrap';
 
   const session = await fetch('/api/session', { cache: 'no-store' });
   if (session.ok) return 'authenticated';
@@ -52,8 +71,12 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void resolveAccessMode()
       .then(setMode)
-      .catch(() => {
-        setError('No pudimos comprobar el acceso. Intentá nuevamente.');
+      .catch((caught) => {
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : 'No pudimos comprobar el acceso. Intentá nuevamente.',
+        );
         setMode('error');
       });
   }, []);
@@ -122,9 +145,11 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
               setError('');
               void resolveAccessMode()
                 .then(setMode)
-                .catch(() => {
+                .catch((caught) => {
                   setError(
-                    'No pudimos comprobar el acceso. Intentá nuevamente.',
+                    caught instanceof Error
+                      ? caught.message
+                      : 'No pudimos comprobar el acceso. Intentá nuevamente.',
                   );
                   setMode('error');
                 });

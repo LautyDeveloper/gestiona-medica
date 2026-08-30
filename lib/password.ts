@@ -38,17 +38,12 @@ async function derive(password: string, salt: Uint8Array, iterations: number) {
   return new Uint8Array(bits);
 }
 
-export async function hashPassword(password: string) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const hash = await derive(password, salt, ITERATIONS);
-  return `${ALGORITHM}$${ITERATIONS}$${encode(salt)}$${encode(hash)}`;
-}
-
-export async function verifyPassword(password: string, encoded: string) {
-  const [algorithm, iterationsText, saltText, expectedText] =
+export function isPasswordHashSupported(encoded: string) {
+  const [algorithm, iterationsText, saltText, expectedText, extra] =
     encoded.split('$');
   const iterations = Number(iterationsText);
   if (
+    extra !== undefined ||
     algorithm !== ALGORITHM ||
     !Number.isInteger(iterations) ||
     iterations < 100_000 ||
@@ -56,6 +51,26 @@ export async function verifyPassword(password: string, encoded: string) {
     !expectedText
   )
     return false;
+  try {
+    return (
+      decode(saltText).length === 16 &&
+      decode(expectedText).length === KEY_BYTES
+    );
+  } catch {
+    return false;
+  }
+}
+
+export async function hashPassword(password: string) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hash = await derive(password, salt, ITERATIONS);
+  return `${ALGORITHM}$${ITERATIONS}$${encode(salt)}$${encode(hash)}`;
+}
+
+export async function verifyPassword(password: string, encoded: string) {
+  const [, iterationsText, saltText, expectedText] = encoded.split('$');
+  const iterations = Number(iterationsText);
+  if (!isPasswordHashSupported(encoded)) return false;
   try {
     const actual = await derive(password, decode(saltText), iterations);
     const expected = decode(expectedText);

@@ -16,7 +16,10 @@ describe('acceso familiar simple', () => {
             ? input.href
             : input;
       if (url === '/api/auth/bootstrap')
-        return Response.json({ setupRequired: true });
+        return Response.json({
+          state: 'setup-required',
+          setupRequired: true,
+        });
       if (url === '/api/session')
         return Response.json({ error: 'Iniciá sesión' }, { status: 401 });
       return Response.json({ ok: true }, { status: 201 });
@@ -49,7 +52,13 @@ describe('acceso familiar simple', () => {
 
   it('no muestra un login engañoso si falla la comprobación inicial', async () => {
     const fetchMock = vi.fn(async () =>
-      Response.json({ error: 'No disponible' }, { status: 500 }),
+      Response.json(
+        {
+          error: 'No disponible',
+          code: 'DATABASE_UNAVAILABLE',
+        },
+        { status: 503 },
+      ),
     );
     vi.stubGlobal('fetch', fetchMock);
     render(
@@ -67,6 +76,30 @@ describe('acceso familiar simple', () => {
     expect(
       screen.queryByRole('button', { name: 'Iniciar sesión' }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Reiniciá la aplicación para aplicar las migraciones/),
+    ).toBeInTheDocument();
+  });
+
+  it('no muestra login cuando la configuración de cuentas es inconsistente', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({ state: 'invalid', setupRequired: false }),
+      ),
+    );
+    render(
+      <AuthShell>
+        <p>Aplicación</p>
+      </AuthShell>,
+    );
+
+    expect(
+      await screen.findByText(/La configuración de acceso está incompleta/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Iniciar sesión' }),
+    ).not.toBeInTheDocument();
   });
 
   it('muestra login cuando el setup ya está cerrado', async () => {
@@ -79,7 +112,7 @@ describe('acceso familiar simple', () => {
             ? input.href
             : input;
       if (url === '/api/auth/bootstrap')
-        return Response.json({ setupRequired: false });
+        return Response.json({ state: 'ready', setupRequired: false });
       if (url === '/api/session')
         return Response.json({ error: 'Iniciá sesión' }, { status: 401 });
       return Response.json({ ok: true });

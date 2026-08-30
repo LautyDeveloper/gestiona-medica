@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { hashPassword, verifyPassword } from '@/lib/password';
+import {
+  hashPassword,
+  isPasswordHashSupported,
+  verifyPassword,
+} from '@/lib/password';
 
 const createTestPassword = () => `test-${crypto.randomUUID()}`;
 
@@ -29,5 +33,12 @@ describe('contraseñas locales', () => {
 
     await expect(verifyPassword(password, malformedHash)).resolves.toBe(false);
     await expect(verifyPassword(password, unsafeHash)).resolves.toBe(false);
+    expect(isPasswordHashSupported(malformedHash)).toBe(false);
+    expect(isPasswordHashSupported(unsafeHash)).toBe(false);
+  });
+
+  it('reconoce el formato de hash usado por la aplicación', async () => {
+    const hash = await hashPassword(createTestPassword());
+    expect(isPasswordHashSupported(hash)).toBe(true);
   });
 });
