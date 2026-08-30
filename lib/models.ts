@@ -7,6 +7,13 @@ export interface Person {
   birthDate: string;
   relationship: string;
   notes: string;
+  archived: boolean;
+}
+
+export interface PersonSummary extends Person {
+  appointmentCount: number;
+  medicationCount: number;
+  taskCount: number;
 }
 export interface Appointment {
   id: string;
@@ -46,10 +53,23 @@ export interface AppData {
   tasks: MedicalTask[];
 }
 
-export interface BackupData {
+export interface PeopleData {
+  persons: PersonSummary[];
+}
+
+export interface BackupDataV1 {
   schemaVersion: 1;
   exportedAt: string;
-  person: Person;
+  person: Omit<Person, 'archived'>;
+  appointments: Appointment[];
+  medications: Medication[];
+  tasks: MedicalTask[];
+}
+
+export interface BackupData {
+  schemaVersion: 2;
+  exportedAt: string;
+  persons: Person[];
   appointments: Appointment[];
   medications: Medication[];
   tasks: MedicalTask[];

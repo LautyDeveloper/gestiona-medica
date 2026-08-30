@@ -1,12 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   CalendarDays,
   ClipboardCheck,
   Home,
   Moon,
-  Pencil,
   Pill,
   Plus,
   Sun,
@@ -19,8 +18,19 @@ import {
   MedicationsView,
   TasksView,
 } from '@/components/app-views';
-import { AppError, AppLoading } from '@/components/app-feedback';
-import { Onboarding, ProfileDialog } from '@/components/person-profile';
+import {
+  AppError,
+  AppLoading,
+  ContentLoading,
+} from '@/components/app-feedback';
+import {
+  NoActivePeople,
+  Onboarding,
+  PeopleManagerDialog,
+  PersonDialog,
+  type PersonPayload,
+} from '@/components/person-profile';
+import { PersonSwitcher } from '@/components/person-switcher';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,17 +49,20 @@ import type {
   Entity,
   MedicalTask,
   Medication,
+  PeopleData,
   Person,
+  PersonSummary,
   Section,
 } from '@/lib/models';
+import { chooseActivePerson } from '@/lib/person-selection';
 
+const ACTIVE_PERSON_KEY = 'activePersonId';
 const navItems: { id: Section; label: string; icon: typeof Home }[] = [
   { id: 'home', label: 'Inicio', icon: Home },
   { id: 'appointments', label: 'Turnos', icon: CalendarDays },
   { id: 'medications', label: 'Medicamentos', icon: Pill },
   { id: 'tasks', label: 'Pendientes', icon: ClipboardCheck },
 ];
-
 const headers: Record<
   Section,
   { title: string; eyebrow: string; action?: string; entity?: Entity }
@@ -76,29 +89,97 @@ const headers: Record<
 };
 
 type RecordValue = Appointment | Medication | MedicalTask;
-type DeleteTarget = { entity: Entity; id: string; label: string };
-type PersonPayload = Omit<Person, 'id'>;
+type DeleteTarget = {
+  entity: Entity;
+  id: string;
+  personId: string;
+  label: string;
+};
 
 function OrganizerContent() {
   const [section, setSection] = useState<Section>('home');
+  const [people, setPeople] = useState<PersonSummary[]>([]);
+  const [activePersonId, setActivePersonId] = useState<string | null>(null);
+  const activePersonIdRef = useRef<string | null>(null);
   const [data, setData] = useState<AppData | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [contentLoading, setContentLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const requestRef = useRef<AbortController | null>(null);
   const [dialog, setDialog] = useState<{
     open: boolean;
     entity: Entity;
     value: RecordValue | null;
   }>({ open: false, entity: 'appointment', value: null });
-  const [profileOpen, setProfileOpen] = useState(false);
+  const [personDialog, setPersonDialog] = useState<{
+    open: boolean;
+    person: Person | null;
+  }>({ open: false, person: null });
+  const [managerOpen, setManagerOpen] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<PersonSummary | null>(
+    null,
+  );
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadPersonData = useCallback(async (personId: string) => {
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
+    setContentLoading(true);
+    setLoadError('');
+    setData(null);
+    try {
+      const next = await requestJson<AppData>(
+        `/api/data?personId=${encodeURIComponent(personId)}`,
+        { signal: controller.signal },
+      );
+      if (!controller.signal.aborted && activePersonIdRef.current === personId)
+        setData(next);
+    } catch (error) {
+      if (!controller.signal.aborted && activePersonIdRef.current === personId)
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : 'No se pudo cargar este perfil.',
+        );
+    } finally {
+      if (!controller.signal.aborted && activePersonIdRef.current === personId)
+        setContentLoading(false);
+    }
+  }, []);
+
+  const selectPerson = useCallback(
+    async (personId: string) => {
+      activePersonIdRef.current = personId;
+      setActivePersonId(personId);
+      window.localStorage.setItem(ACTIVE_PERSON_KEY, personId);
+      await loadPersonData(personId);
+    },
+    [loadPersonData],
+  );
+
+  const loadPeople = useCallback(async () => {
+    const response = await requestJson<PeopleData>('/api/person');
+    setPeople(response.persons);
+    return response.persons;
+  }, []);
+
+  const bootstrap = useCallback(async () => {
+    setInitialLoading(true);
     setLoadError('');
     try {
-      setData(await requestJson<AppData>('/api/data'));
+      const nextPeople = await loadPeople();
+      const saved = window.localStorage.getItem(ACTIVE_PERSON_KEY);
+      const selected = chooseActivePerson(nextPeople, saved);
+      if (selected) await selectPerson(selected.id);
+      else {
+        activePersonIdRef.current = null;
+        setActivePersonId(null);
+        setData(null);
+        window.localStorage.removeItem(ACTIVE_PERSON_KEY);
+      }
     } catch (error) {
       setLoadError(
         error instanceof Error
@@ -106,23 +187,25 @@ function OrganizerContent() {
           : 'Intentá nuevamente en unos minutos.',
       );
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
     }
-  }, []);
+  }, [loadPeople, selectPerson]);
 
   useEffect(() => {
-    const frame = window.requestAnimationFrame(() => void loadData());
+    const frame = window.requestAnimationFrame(() => void bootstrap());
     const saved = window.localStorage.getItem('theme') === 'dark';
     document.documentElement.classList.toggle('dark', saved);
-    return () => window.cancelAnimationFrame(frame);
-  }, [loadData]);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      requestRef.current?.abort();
+    };
+  }, [bootstrap]);
 
   function toggleTheme() {
     const next = !document.documentElement.classList.contains('dark');
     document.documentElement.classList.toggle('dark', next);
     window.localStorage.setItem('theme', next ? 'dark' : 'light');
   }
-
   function openNew(entity: Entity) {
     setDialog({ open: true, entity, value: null });
   }
@@ -135,21 +218,113 @@ function OrganizerContent() {
           : 'task';
     setDialog({ open: true, entity, value });
   }
+  function openAddPerson() {
+    setManagerOpen(false);
+    setPersonDialog({ open: true, person: null });
+  }
+  function openEditPerson(person: Person) {
+    setManagerOpen(false);
+    setPersonDialog({ open: true, person });
+  }
+
+  async function savePerson(payload: PersonPayload) {
+    const editing = personDialog.person;
+    if (editing) {
+      await requestJson('/api/person', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editing.id, data: payload }),
+      });
+      await loadPeople();
+      if (editing.id === activePersonIdRef.current)
+        await loadPersonData(editing.id);
+      toast.add({
+        title: 'Perfil actualizado',
+        description: 'Los datos personales quedaron guardados.',
+        type: 'success',
+      });
+    } else {
+      const result = await requestJson<{ id: string }>('/api/person', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      await loadPeople();
+      await selectPerson(result.id);
+      toast.add({
+        title: 'Perfil creado',
+        description:
+          'Ya podés cargar información sin mezclarla con otros perfiles.',
+        type: 'success',
+      });
+    }
+    setPersonDialog({ open: false, person: null });
+  }
+
+  async function changeArchived(person: PersonSummary, archived: boolean) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await requestJson('/api/person/archive', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: person.id, archived }),
+      });
+      const nextPeople = await loadPeople();
+      const nextActive = chooseActivePerson(nextPeople);
+      if (archived && person.id === activePersonIdRef.current) {
+        if (nextActive) await selectPerson(nextActive.id);
+        else {
+          activePersonIdRef.current = null;
+          setActivePersonId(null);
+          setData(null);
+          window.localStorage.removeItem(ACTIVE_PERSON_KEY);
+        }
+      } else if (!archived && !activePersonIdRef.current)
+        await selectPerson(person.id);
+      setArchiveTarget(null);
+      toast.add({
+        title: archived ? 'Perfil archivado' : 'Perfil restaurado',
+        description: archived
+          ? 'Su información se conservó y podés restaurarla cuando quieras.'
+          : 'La persona volvió a estar disponible en el selector.',
+        type: 'success',
+      });
+    } catch (error) {
+      toast.add({
+        title: 'No se pudo actualizar el perfil',
+        description:
+          error instanceof Error ? error.message : 'Intentá nuevamente.',
+        type: 'error',
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function save(
     entity: Entity,
     payload: Record<string, unknown>,
     id?: string,
   ) {
+    const targetPersonId = activePersonIdRef.current;
+    if (!targetPersonId) throw new ApiError('No hay una persona activa');
     await requestJson('/api/data', {
       method: id ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ entity, id, data: payload }),
+      body: JSON.stringify({
+        entity,
+        id,
+        personId: targetPersonId,
+        data: payload,
+      }),
     });
-    await loadData();
+    if (activePersonIdRef.current === targetPersonId)
+      await loadPersonData(targetPersonId);
+    await loadPeople();
     toast.add({
       title: id ? 'Cambios guardados' : 'Registro creado',
-      description: 'La información quedó actualizada.',
+      description: 'La información quedó guardada en el perfil correcto.',
       type: 'success',
     });
   }
@@ -182,7 +357,7 @@ function OrganizerContent() {
         : 'active' in item
           ? item.name
           : item.title;
-    setDeleteTarget({ entity, id: item.id, label });
+    setDeleteTarget({ entity, id: item.id, personId: item.personId, label });
   }
 
   async function confirmDelete() {
@@ -190,10 +365,12 @@ function OrganizerContent() {
     setBusy(true);
     try {
       await requestJson(
-        `/api/data?entity=${deleteTarget.entity}&id=${encodeURIComponent(deleteTarget.id)}`,
+        `/api/data?entity=${deleteTarget.entity}&id=${encodeURIComponent(deleteTarget.id)}&personId=${encodeURIComponent(deleteTarget.personId)}`,
         { method: 'DELETE' },
       );
-      await loadData();
+      if (activePersonIdRef.current === deleteTarget.personId)
+        await loadPersonData(deleteTarget.personId);
+      await loadPeople();
       setDeleteTarget(null);
       toast.add({
         title: 'Registro eliminado',
@@ -212,24 +389,6 @@ function OrganizerContent() {
     }
   }
 
-  async function savePerson(payload: PersonPayload) {
-    const editing = Boolean(data?.person);
-    await requestJson('/api/person', {
-      method: editing ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    await loadData();
-    setProfileOpen(false);
-    toast.add({
-      title: editing ? 'Perfil actualizado' : 'Todo listo para empezar',
-      description: editing
-        ? 'Los datos personales quedaron guardados.'
-        : 'Ya podés cargar información real.',
-      type: 'success',
-    });
-  }
-
   async function exportBackup() {
     try {
       const response = await fetch('/api/backup');
@@ -245,8 +404,8 @@ function OrganizerContent() {
       anchor.click();
       URL.revokeObjectURL(url);
       toast.add({
-        title: 'Respaldo descargado',
-        description: 'Guardalo en un lugar seguro.',
+        title: 'Respaldo completo descargado',
+        description: 'Incluye todas las personas y su información.',
         type: 'success',
       });
     } catch (error) {
@@ -272,11 +431,13 @@ function OrganizerContent() {
         headers: { 'Content-Type': 'application/json' },
         body: text,
       });
-      await loadData();
       setRestoreFile(null);
+      setManagerOpen(false);
+      await bootstrap();
       toast.add({
         title: 'Respaldo restaurado',
-        description: 'Todos los datos fueron reemplazados correctamente.',
+        description:
+          'Todas las personas y sus datos fueron reemplazados correctamente.',
         type: 'success',
       });
     } catch (error) {
@@ -295,13 +456,72 @@ function OrganizerContent() {
     }
   }
 
-  if (loading && !data) return <AppLoading />;
-  if (loadError && !data)
-    return <AppError message={loadError} onRetry={() => void loadData()} />;
-  if (!data) return null;
-  if (!data.person) return <Onboarding onSave={savePerson} />;
+  if (initialLoading) return <AppLoading />;
+  if (loadError && people.length === 0)
+    return <AppError message={loadError} onRetry={() => void bootstrap()} />;
+  if (people.length === 0)
+    return (
+      <>
+        <Onboarding onSave={savePerson} />
+        <PersonDialog
+          person={personDialog.person}
+          open={personDialog.open}
+          onOpenChange={(open) =>
+            setPersonDialog((current) => ({ ...current, open }))
+          }
+          onSave={savePerson}
+        />
+      </>
+    );
+  const activePerson = people.find(
+    (person) => person.id === activePersonId && !person.archived,
+  );
+  if (!activePerson)
+    return (
+      <>
+        <NoActivePeople
+          onAdd={openAddPerson}
+          onManage={() => setManagerOpen(true)}
+        />
+        <PersonDialog
+          person={personDialog.person}
+          open={personDialog.open}
+          onOpenChange={(open) =>
+            setPersonDialog((current) => ({ ...current, open }))
+          }
+          onSave={savePerson}
+        />
+        <PeopleManagerDialog
+          people={people}
+          open={managerOpen}
+          onOpenChange={setManagerOpen}
+          onAdd={openAddPerson}
+          onEdit={openEditPerson}
+          onArchive={setArchiveTarget}
+          onRestore={(person) => void changeArchived(person, false)}
+          onExport={exportBackup}
+          onImport={(file) => {
+            setManagerOpen(false);
+            setRestoreFile(file);
+          }}
+        />
+        <ArchiveDialog
+          person={archiveTarget}
+          busy={busy}
+          onCancel={() => setArchiveTarget(null)}
+          onConfirm={() =>
+            archiveTarget && void changeArchived(archiveTarget, true)
+          }
+        />
+        <RestoreDialog
+          file={restoreFile}
+          busy={busy}
+          onCancel={() => setRestoreFile(null)}
+          onConfirm={() => void confirmRestore()}
+        />
+      </>
+    );
 
-  const person = data.person;
   const header = headers[section];
   return (
     <div className="min-h-dvh bg-background text-foreground" aria-busy={busy}>
@@ -327,53 +547,51 @@ function OrganizerContent() {
             </button>
           ))}
         </nav>
-        <button
-          onClick={() => setProfileOpen(true)}
-          className="mt-auto rounded-2xl border border-sidebar-border bg-sidebar-accent/60 p-4 text-left transition-colors hover:bg-sidebar-accent"
-        >
-          <p className="text-xs font-medium text-muted-foreground">
-            Organizando la salud de
-          </p>
-          <span className="mt-1 flex items-center justify-between font-semibold">
-            {person.name}
-            <Pencil className="size-4 text-muted-foreground" />
-          </span>
-        </button>
+        <div className="mt-auto">
+          <PersonSwitcher
+            activePerson={activePerson}
+            people={people}
+            onSelect={(id) => void selectPerson(id)}
+            onAdd={openAddPerson}
+            onManage={() => setManagerOpen(true)}
+          />
+        </div>
       </aside>
       <main
         className={`min-h-dvh pb-24 md:ml-64 md:pb-10 ${busy ? 'pointer-events-none opacity-80' : ''}`}
       >
         <header className="sticky top-0 z-20 flex min-h-20 items-center justify-between gap-3 border-b border-border/70 bg-background/85 px-5 py-3 backdrop-blur-xl sm:px-8 lg:px-12">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-              {header.eyebrow}
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+              {header.eyebrow} · Perfil activo: {activePerson.name}
             </p>
             <h1 className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">
               {section === 'home'
-                ? `Hola, ${person.name.split(' ')[0]}`
+                ? `Hola, ${activePerson.name.split(' ')[0]}`
                 : header.title}
             </h1>
           </div>
           <div className="flex items-center gap-2">
+            <div className="md:hidden">
+              <PersonSwitcher
+                compact
+                activePerson={activePerson}
+                people={people}
+                onSelect={(id) => void selectPerson(id)}
+                onAdd={openAddPerson}
+                onManage={() => setManagerOpen(true)}
+              />
+            </div>
             {header.action && header.entity && (
               <Button
                 size="lg"
-                className="rounded-xl"
+                className="hidden rounded-xl sm:inline-flex"
                 onClick={() => openNew(header.entity!)}
               >
                 <Plus />
                 {header.action}
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="icon-lg"
-              aria-label="Editar perfil"
-              onClick={() => setProfileOpen(true)}
-              className="rounded-xl bg-card md:hidden"
-            >
-              <Pencil />
-            </Button>
             <Button
               variant="outline"
               size="icon-lg"
@@ -387,57 +605,68 @@ function OrganizerContent() {
           </div>
         </header>
         <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8 lg:px-12 lg:py-10">
-          {loadError && (
-            <button
-              onClick={() => void loadData()}
-              className="mb-5 block w-full rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-left text-sm text-amber-800 dark:text-amber-200"
-            >
-              No se pudieron actualizar los datos. Tocá para reintentar.
-            </button>
-          )}
-          {section === 'home' && <HomeView data={data} navigate={setSection} />}
-          {section === 'appointments' && (
-            <AppointmentsView
-              items={data.appointments}
-              onNew={() => openNew('appointment')}
-              onEdit={openEdit}
-              onComplete={(item) =>
-                void update('appointment', item, { status: 'Realizado' })
-              }
-              onDelete={(id) => {
-                const item = data.appointments.find((value) => value.id === id);
-                if (item) requestDelete('appointment', item);
-              }}
+          {contentLoading ? (
+            <ContentLoading />
+          ) : loadError ? (
+            <AppError
+              message={loadError}
+              onRetry={() => void loadPersonData(activePerson.id)}
             />
-          )}
-          {section === 'medications' && (
-            <MedicationsView
-              items={data.medications}
-              onNew={() => openNew('medication')}
-              onEdit={openEdit}
-              onDelete={(id) => {
-                const item = data.medications.find((value) => value.id === id);
-                if (item) requestDelete('medication', item);
-              }}
-            />
-          )}
-          {section === 'tasks' && (
-            <TasksView
-              items={data.tasks}
-              onNew={() => openNew('task')}
-              onEdit={openEdit}
-              onComplete={(item) =>
-                void update('task', item, {
-                  status:
-                    item.status === 'Pendiente' ? 'Completado' : 'Pendiente',
-                })
-              }
-              onDelete={(id) => {
-                const item = data.tasks.find((value) => value.id === id);
-                if (item) requestDelete('task', item);
-              }}
-            />
-          )}
+          ) : data ? (
+            <>
+              {section === 'home' && (
+                <HomeView data={data} navigate={setSection} onNew={openNew} />
+              )}{' '}
+              {section === 'appointments' && (
+                <AppointmentsView
+                  items={data.appointments}
+                  onNew={() => openNew('appointment')}
+                  onEdit={openEdit}
+                  onComplete={(item) =>
+                    void update('appointment', item, { status: 'Realizado' })
+                  }
+                  onDelete={(id) => {
+                    const item = data.appointments.find(
+                      (value) => value.id === id,
+                    );
+                    if (item) requestDelete('appointment', item);
+                  }}
+                />
+              )}{' '}
+              {section === 'medications' && (
+                <MedicationsView
+                  items={data.medications}
+                  onNew={() => openNew('medication')}
+                  onEdit={openEdit}
+                  onDelete={(id) => {
+                    const item = data.medications.find(
+                      (value) => value.id === id,
+                    );
+                    if (item) requestDelete('medication', item);
+                  }}
+                />
+              )}{' '}
+              {section === 'tasks' && (
+                <TasksView
+                  items={data.tasks}
+                  onNew={() => openNew('task')}
+                  onEdit={openEdit}
+                  onComplete={(item) =>
+                    void update('task', item, {
+                      status:
+                        item.status === 'Pendiente'
+                          ? 'Completado'
+                          : 'Pendiente',
+                    })
+                  }
+                  onDelete={(id) => {
+                    const item = data.tasks.find((value) => value.id === id);
+                    if (item) requestDelete('task', item);
+                  }}
+                />
+              )}
+            </>
+          ) : null}
         </div>
       </main>
       <nav
@@ -456,25 +685,44 @@ function OrganizerContent() {
         ))}
       </nav>
       <RecordDialog
-        key={`${dialog.entity}-${dialog.value?.id || 'new'}-${dialog.open}`}
+        key={`${dialog.entity}-${dialog.value?.id || 'new'}-${dialog.open}-${activePerson.id}`}
         entity={dialog.entity}
-        personId={person.id}
+        personId={activePerson.id}
         value={dialog.value}
         open={dialog.open}
         onOpenChange={(open) => setDialog((current) => ({ ...current, open }))}
         onSave={save}
       />
-      <ProfileDialog
-        key={`${person.id}-${profileOpen}`}
-        person={person}
-        open={profileOpen}
-        onOpenChange={setProfileOpen}
+      <PersonDialog
+        key={`${personDialog.person?.id || 'new'}-${personDialog.open}`}
+        person={personDialog.person}
+        open={personDialog.open}
+        onOpenChange={(open) =>
+          setPersonDialog((current) => ({ ...current, open }))
+        }
         onSave={savePerson}
+      />
+      <PeopleManagerDialog
+        people={people}
+        open={managerOpen}
+        onOpenChange={setManagerOpen}
+        onAdd={openAddPerson}
+        onEdit={openEditPerson}
+        onArchive={setArchiveTarget}
+        onRestore={(person) => void changeArchived(person, false)}
         onExport={exportBackup}
         onImport={(file) => {
-          setProfileOpen(false);
+          setManagerOpen(false);
           setRestoreFile(file);
         }}
+      />
+      <ArchiveDialog
+        person={archiveTarget}
+        busy={busy}
+        onCancel={() => setArchiveTarget(null)}
+        onConfirm={() =>
+          archiveTarget && void changeArchived(archiveTarget, true)
+        }
       />
       <AlertDialog
         open={Boolean(deleteTarget)}
@@ -503,34 +751,95 @@ function OrganizerContent() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <AlertDialog
-        open={Boolean(restoreFile)}
-        onOpenChange={(open) => {
-          if (!open && !busy) setRestoreFile(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Reemplazar todos los datos?</AlertDialogTitle>
-            <AlertDialogDescription>
-              El respaldo “{restoreFile?.name}” sustituirá el perfil, los
-              turnos, medicamentos y pendientes actuales. Esta acción no se
-              puede deshacer.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={busy}
-              onClick={() => void confirmRestore()}
-            >
-              {busy ? 'Restaurando…' : 'Restaurar respaldo'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <RestoreDialog
+        file={restoreFile}
+        busy={busy}
+        onCancel={() => setRestoreFile(null)}
+        onConfirm={() => void confirmRestore()}
+      />
     </div>
+  );
+}
+
+function ArchiveDialog({
+  person,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  person: PersonSummary | null;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const total = person
+    ? person.appointmentCount + person.medicationCount + person.taskCount
+    : 0;
+  return (
+    <AlertDialog
+      open={Boolean(person)}
+      onOpenChange={(open) => {
+        if (!open && !busy) onCancel();
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>¿Archivar a {person?.name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {total > 0
+              ? `Tiene ${person?.appointmentCount} turnos, ${person?.medicationCount} medicamentos y ${person?.taskCount} pendientes. Se ocultará del selector, pero toda la información quedará conservada.`
+              : 'Se ocultará del selector y podrás restaurar el perfil cuando quieras.'}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
+          <AlertDialogAction disabled={busy} onClick={onConfirm}>
+            {busy ? 'Archivando…' : 'Archivar perfil'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function RestoreDialog({
+  file,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  file: File | null;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog
+      open={Boolean(file)}
+      onOpenChange={(open) => {
+        if (!open && !busy) onCancel();
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>¿Reemplazar todos los datos?</AlertDialogTitle>
+          <AlertDialogDescription>
+            El respaldo “{file?.name}” sustituirá todas las personas y su
+            información actual. También se aceptan respaldos de Sprint 1.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={busy}
+            onClick={onConfirm}
+          >
+            {busy ? 'Restaurando…' : 'Restaurar respaldo'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

@@ -48,9 +48,11 @@ function StatusBadge({
 export function HomeView({
   data,
   navigate,
+  onNew,
 }: {
   data: AppData;
   navigate: (section: Section) => void;
+  onNew: (entity: 'appointment' | 'medication' | 'task') => void;
 }) {
   const appointments = data.appointments
     .filter((a) => a.status === 'Próximo')
@@ -60,6 +62,45 @@ export function HomeView({
     .filter((task) => task.status === 'Pendiente')
     .sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'))
     .slice(0, 4);
+  if (
+    data.appointments.length === 0 &&
+    data.medications.length === 0 &&
+    data.tasks.length === 0
+  ) {
+    return (
+      <div className="page-rise grid min-h-[60dvh] place-items-center">
+        <section className="w-full max-w-2xl rounded-3xl border border-dashed bg-card/60 p-7 text-center sm:p-10">
+          <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-secondary text-primary">
+            <CheckCircle2 className="size-7" />
+          </div>
+          <p className="mt-5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+            Perfil nuevo
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">
+            Todavía no cargaste información de {data.person?.name}.
+          </h2>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+            Empezá por cualquiera de estas opciones. Cada dato quedará guardado
+            únicamente en este perfil.
+          </p>
+          <div className="mt-7 flex flex-col justify-center gap-2 sm:flex-row">
+            <Button onClick={() => onNew('appointment')}>
+              <CalendarDays />
+              Primer turno
+            </Button>
+            <Button variant="outline" onClick={() => onNew('medication')}>
+              <Pill />
+              Primer medicamento
+            </Button>
+            <Button variant="outline" onClick={() => onNew('task')}>
+              <CheckCircle2 />
+              Primer pendiente
+            </Button>
+          </div>
+        </section>
+      </div>
+    );
+  }
   return (
     <div className="page-rise">
       <div className="mb-7">

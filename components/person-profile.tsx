@@ -1,7 +1,16 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Download, HeartHandshake, Upload } from 'lucide-react';
+import {
+  Archive,
+  ArchiveRestore,
+  Download,
+  HeartHandshake,
+  Pencil,
+  Plus,
+  Upload,
+  Users,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -14,10 +23,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ApiError } from '@/lib/client-api';
-import type { Person } from '@/lib/models';
+import type { Person, PersonSummary } from '@/lib/models';
 import { personSchema } from '@/lib/validation';
 
-type PersonPayload = Omit<Person, 'id'>;
+export type PersonPayload = Pick<
+  Person,
+  'name' | 'birthDate' | 'relationship' | 'notes'
+>;
 
 function PersonForm({
   id,
@@ -123,7 +135,7 @@ function PersonForm({
           required
           value={form.name}
           onChange={(event) => update('name', event.target.value)}
-          placeholder="Ej. Elena Rodríguez"
+          placeholder="Ej. María González"
         />,
         true,
       )}
@@ -147,7 +159,7 @@ function PersonForm({
             required
             value={form.relationship}
             onChange={(event) => update('relationship', event.target.value)}
-            placeholder="Ej. Madre, pareja"
+            placeholder="Ej. Abuela, pareja"
           />,
           true,
         )}
@@ -186,8 +198,8 @@ export function Onboarding({
           ¿A quién vas a acompañar?
         </h1>
         <p className="mt-3 mb-7 text-sm leading-6 text-muted-foreground">
-          Configurá a la persona cuidada para empezar con una agenda limpia y
-          datos reales.
+          Creá el primer perfil. Después vas a poder sumar a otras personas sin
+          mezclar su información.
         </p>
         <PersonForm
           id="onboarding-form"
@@ -199,42 +211,202 @@ export function Onboarding({
   );
 }
 
-export function ProfileDialog({
+export function NoActivePeople({
+  onAdd,
+  onManage,
+}: {
+  onAdd: () => void;
+  onManage: () => void;
+}) {
+  return (
+    <main className="grid min-h-dvh place-items-center bg-background p-6 text-foreground">
+      <section className="max-w-md rounded-3xl border bg-card p-8 text-center">
+        <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-secondary text-primary">
+          <Users />
+        </div>
+        <h1 className="mt-4 text-xl font-semibold">No hay perfiles activos</h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          Podés crear una persona nueva o restaurar uno de los perfiles
+          archivados.
+        </p>
+        <div className="mt-6 flex flex-col justify-center gap-2 sm:flex-row">
+          <Button onClick={onAdd}>
+            <Plus />
+            Agregar persona
+          </Button>
+          <Button variant="outline" onClick={onManage}>
+            Ver archivados
+          </Button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+export function PersonDialog({
   person,
   open,
   onOpenChange,
   onSave,
-  onExport,
-  onImport,
 }: {
-  person: Person;
+  person: Person | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSave: (data: PersonPayload) => Promise<void>;
-  onExport: () => Promise<void>;
-  onImport: (file: File) => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto p-5 sm:max-w-xl sm:p-6">
         <DialogHeader>
-          <DialogTitle className="text-xl">Perfil y respaldo</DialogTitle>
+          <DialogTitle className="text-xl">
+            {person ? `Editar a ${person.name}` : 'Agregar persona'}
+          </DialogTitle>
           <DialogDescription>
-            Editá los datos de {person.name} o administrá una copia de
-            seguridad.
+            {person
+              ? 'Actualizá sus datos básicos.'
+              : 'Creá un perfil independiente para organizar su salud.'}
           </DialogDescription>
         </DialogHeader>
         <PersonForm
-          id="profile-form"
-          value={person}
-          submitLabel="Guardar cambios"
+          id="person-form"
+          value={person || undefined}
+          submitLabel={person ? 'Guardar cambios' : 'Crear perfil'}
           onSave={onSave}
         />
-        <section className="mt-2 rounded-2xl border bg-muted/35 p-4">
-          <h3 className="text-sm font-semibold">Respaldo de datos</h3>
+        <DialogFooter className="-mx-5 -mb-5 mt-1 sm:-mx-6 sm:-mb-6">
+          <Button
+            variant="outline"
+            type="button"
+            onClick={() => onOpenChange(false)}
+          >
+            Cancelar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function countLabel(person: PersonSummary) {
+  const total =
+    person.appointmentCount + person.medicationCount + person.taskCount;
+  return total === 0
+    ? 'Sin información cargada'
+    : `${total} ${total === 1 ? 'registro' : 'registros'}`;
+}
+
+export function PeopleManagerDialog({
+  people,
+  open,
+  onOpenChange,
+  onAdd,
+  onEdit,
+  onArchive,
+  onRestore,
+  onExport,
+  onImport,
+}: {
+  people: PersonSummary[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onAdd: () => void;
+  onEdit: (person: PersonSummary) => void;
+  onArchive: (person: PersonSummary) => void;
+  onRestore: (person: PersonSummary) => void;
+  onExport: () => Promise<void>;
+  onImport: (file: File) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const active = people.filter((person) => !person.archived);
+  const archived = people.filter((person) => person.archived);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto p-5 sm:max-w-2xl sm:p-6">
+        <DialogHeader>
+          <DialogTitle className="text-xl">Administrar personas</DialogTitle>
+          <DialogDescription>
+            Creá perfiles separados, archivá los que ya no usás y administrá el
+            respaldo completo.
+          </DialogDescription>
+        </DialogHeader>
+        <Button className="w-fit" onClick={onAdd}>
+          <Plus />
+          Agregar persona
+        </Button>
+        <section>
+          <h3 className="mb-2 text-sm font-semibold">Perfiles activos</h3>
+          <div className="space-y-2">
+            {active.map((person) => (
+              <article
+                key={person.id}
+                className="flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">{person.name}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {person.relationship} · {countLabel(person)}
+                  </p>
+                </div>
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onEdit(person)}
+                  >
+                    <Pencil />
+                    Editar
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onArchive(person)}
+                  >
+                    <Archive />
+                    Archivar
+                  </Button>
+                </div>
+              </article>
+            ))}
+            {active.length === 0 && (
+              <p className="rounded-2xl border border-dashed p-5 text-sm text-muted-foreground">
+                No hay perfiles activos.
+              </p>
+            )}
+          </div>
+        </section>
+        {archived.length > 0 && (
+          <section>
+            <h3 className="mb-2 text-sm font-semibold">Archivados</h3>
+            <div className="space-y-2">
+              {archived.map((person) => (
+                <article
+                  key={person.id}
+                  className="flex flex-col gap-3 rounded-2xl border bg-muted/30 p-4 sm:flex-row sm:items-center"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold">{person.name}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {countLabel(person)} · Información conservada
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onRestore(person)}
+                  >
+                    <ArchiveRestore />
+                    Restaurar
+                  </Button>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+        <section className="rounded-2xl border bg-muted/35 p-4">
+          <h3 className="text-sm font-semibold">Respaldo completo</h3>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Descargá una copia completa o restaurá un archivo anterior.
+            Incluye todas las personas, también las archivadas, y toda su
+            información.
           </p>
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
             <Button

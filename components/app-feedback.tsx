@@ -52,3 +52,15 @@ export function AppError({
     </main>
   );
 }
+
+export function ContentLoading() {
+  return (
+    <div className="space-y-6" aria-label="Cargando perfil">
+      <Skeleton className="h-8 w-48" />
+      <div className="grid gap-5 lg:grid-cols-[1.35fr_.9fr]">
+        <Skeleton className="h-72 rounded-3xl" />
+        <Skeleton className="h-72 rounded-3xl" />
+      </div>
+    </div>
+  );
+}

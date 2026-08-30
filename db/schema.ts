@@ -1,12 +1,19 @@
 import { integer, sqliteTable, text, index } from 'drizzle-orm/sqlite-core';
 
-export const persons = sqliteTable('persons', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  birthDate: text('birth_date').notNull().default(''),
-  relationship: text('relationship').notNull().default(''),
-  notes: text('notes').notNull().default(''),
-});
+export const persons = sqliteTable(
+  'persons',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    birthDate: text('birth_date').notNull().default(''),
+    relationship: text('relationship').notNull().default(''),
+    notes: text('notes').notNull().default(''),
+    archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+  },
+  (table) => [
+    index('idx_persons_archived_name').on(table.archived, table.name),
+  ],
+);
 export const appointments = sqliteTable(
   'appointments',
   {
