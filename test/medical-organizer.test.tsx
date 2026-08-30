@@ -7,6 +7,14 @@ import type { AppData, PersonSummary } from '@/lib/models';
 const anaId = '11111111-1111-4111-8111-111111111111';
 const luisId = '22222222-2222-4222-8222-222222222222';
 const appointmentId = '33333333-3333-4333-8333-333333333333';
+const groupId = '44444444-4444-4444-8444-444444444444';
+const group = {
+  id: groupId,
+  name: 'Familia Pérez',
+  role: 'admin' as const,
+  memberCount: 1,
+  personCount: 2,
+};
 const people: PersonSummary[] = [
   {
     id: anaId,
@@ -65,7 +73,25 @@ function mockApi() {
         : input instanceof URL
           ? input.href
           : input;
-    if (url === '/api/person') return Response.json({ persons: people });
+    if (url === '/api/session')
+      return Response.json({
+        user: {
+          id: 'u1',
+          username: 'ana',
+          displayName: 'Ana',
+          email: 'ana@example.com',
+        },
+        groups: [group],
+      });
+    if (url.startsWith('/api/groups?'))
+      return Response.json({
+        group,
+        members: [],
+        invitations: [],
+        persons: people,
+      });
+    if (url.startsWith('/api/person?'))
+      return Response.json({ persons: people });
     if (init?.method === 'DELETE') return Response.json({ ok: true });
     if (url.includes(encodeURIComponent(luisId)))
       return Response.json(luisData);
@@ -80,7 +106,7 @@ afterEach(() => {
 
 describe('organizador multi-persona', () => {
   it('restaura la última persona seleccionada sin mostrar datos ajenos', async () => {
-    window.localStorage.setItem('activePersonId', luisId);
+    window.localStorage.setItem(`activePersonId:${groupId}`, luisId);
     vi.stubGlobal('fetch', mockApi());
     render(<MedicalOrganizer />);
     expect(await screen.findByText('Hola, Luis')).toBeInTheDocument();

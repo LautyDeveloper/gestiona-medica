@@ -1,5 +1,10 @@
 import { MedicalOrganizer } from '@/components/medical-organizer';
+import { AuthShell } from '@/components/auth-shell';
 
 export default function Home() {
-  return <MedicalOrganizer />;
+  return (
+    <AuthShell>
+      <MedicalOrganizer />
+    </AuthShell>
+  );
 }

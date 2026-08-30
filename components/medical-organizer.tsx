@@ -9,8 +9,20 @@ import {
   Pill,
   Plus,
   Sun,
+  Users,
+  LogOut,
 } from 'lucide-react';
+import { useAuth0 } from '@auth0/auth0-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { RecordDialog } from '@/components/record-dialog';
 import {
   AppointmentsView,
@@ -32,6 +44,11 @@ import {
 } from '@/components/person-profile';
 import { PersonSwitcher } from '@/components/person-switcher';
 import {
+  GroupOnboarding,
+  GroupSwitcher,
+  GroupView,
+} from '@/components/group-management';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -42,7 +59,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Toaster, toast } from '@/components/ui/toast';
-import { ApiError, requestJson } from '@/lib/client-api';
+import { ApiError, authorizedFetch, requestJson } from '@/lib/client-api';
 import type {
   AppData,
   Appointment,
@@ -53,15 +70,20 @@ import type {
   Person,
   PersonSummary,
   Section,
+  CareGroup,
+  GroupData,
+  SessionData,
 } from '@/lib/models';
 import { chooseActivePerson } from '@/lib/person-selection';
 
 const ACTIVE_PERSON_KEY = 'activePersonId';
+const ACTIVE_GROUP_KEY = 'activeCareGroupId';
 const navItems: { id: Section; label: string; icon: typeof Home }[] = [
   { id: 'home', label: 'Inicio', icon: Home },
   { id: 'appointments', label: 'Turnos', icon: CalendarDays },
   { id: 'medications', label: 'Medicamentos', icon: Pill },
   { id: 'tasks', label: 'Pendientes', icon: ClipboardCheck },
+  { id: 'group', label: 'Grupo familiar', icon: Users },
 ];
 const headers: Record<
   Section,
@@ -86,6 +108,7 @@ const headers: Record<
     action: 'Nuevo pendiente',
     entity: 'task',
   },
+  group: { title: 'Grupo familiar', eyebrow: 'Espacio compartido' },
 };
 
 type RecordValue = Appointment | Medication | MedicalTask;
@@ -97,7 +120,15 @@ type DeleteTarget = {
 };
 
 function OrganizerContent() {
+  const { logout } = useAuth0();
   const [section, setSection] = useState<Section>('home');
+  const [groups, setGroups] = useState<CareGroup[]>([]);
+  const [activeGroupId, setActiveGroupId] = useState('');
+  const activeGroupIdRef = useRef('');
+  const [groupData, setGroupData] = useState<GroupData | null>(null);
+  const [inviteUrl, setInviteUrl] = useState('');
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
+  const [groupName, setGroupName] = useState('');
   const [people, setPeople] = useState<PersonSummary[]>([]);
   const [activePersonId, setActivePersonId] = useState<string | null>(null);
   const activePersonIdRef = useRef<string | null>(null);
@@ -123,55 +154,106 @@ function OrganizerContent() {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
 
-  const loadPersonData = useCallback(async (personId: string) => {
-    requestRef.current?.abort();
-    const controller = new AbortController();
-    requestRef.current = controller;
-    setContentLoading(true);
-    setLoadError('');
-    setData(null);
-    try {
-      const next = await requestJson<AppData>(
-        `/api/data?personId=${encodeURIComponent(personId)}`,
-        { signal: controller.signal },
-      );
-      if (!controller.signal.aborted && activePersonIdRef.current === personId)
-        setData(next);
-    } catch (error) {
-      if (!controller.signal.aborted && activePersonIdRef.current === personId)
-        setLoadError(
-          error instanceof Error
-            ? error.message
-            : 'No se pudo cargar este perfil.',
+  const loadPersonData = useCallback(
+    async (personId: string, careGroupId = activeGroupIdRef.current) => {
+      requestRef.current?.abort();
+      const controller = new AbortController();
+      requestRef.current = controller;
+      setContentLoading(true);
+      setLoadError('');
+      setData(null);
+      try {
+        const next = await requestJson<AppData>(
+          `/api/data?personId=${encodeURIComponent(personId)}&careGroupId=${encodeURIComponent(careGroupId)}`,
+          { signal: controller.signal },
         );
-    } finally {
-      if (!controller.signal.aborted && activePersonIdRef.current === personId)
-        setContentLoading(false);
-    }
-  }, []);
+        if (
+          !controller.signal.aborted &&
+          activePersonIdRef.current === personId &&
+          activeGroupIdRef.current === careGroupId
+        )
+          setData(next);
+      } catch (error) {
+        if (
+          !controller.signal.aborted &&
+          activePersonIdRef.current === personId &&
+          activeGroupIdRef.current === careGroupId
+        )
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : 'No se pudo cargar este perfil.',
+          );
+      } finally {
+        if (
+          !controller.signal.aborted &&
+          activePersonIdRef.current === personId &&
+          activeGroupIdRef.current === careGroupId
+        )
+          setContentLoading(false);
+      }
+    },
+    [],
+  );
 
   const selectPerson = useCallback(
     async (personId: string) => {
       activePersonIdRef.current = personId;
       setActivePersonId(personId);
-      window.localStorage.setItem(ACTIVE_PERSON_KEY, personId);
-      await loadPersonData(personId);
+      window.localStorage.setItem(
+        `${ACTIVE_PERSON_KEY}:${activeGroupIdRef.current}`,
+        personId,
+      );
+      await loadPersonData(personId, activeGroupIdRef.current);
     },
     [loadPersonData],
   );
 
-  const loadPeople = useCallback(async () => {
-    const response = await requestJson<PeopleData>('/api/person');
-    setPeople(response.persons);
-    return response.persons;
-  }, []);
+  const loadPeople = useCallback(
+    async (careGroupId = activeGroupIdRef.current) => {
+      const response = await requestJson<PeopleData>(
+        `/api/person?careGroupId=${encodeURIComponent(careGroupId)}`,
+      );
+      setPeople(response.persons);
+      return response.persons;
+    },
+    [],
+  );
+
+  const loadGroup = useCallback(
+    async (careGroupId = activeGroupIdRef.current) => {
+      const response = await requestJson<GroupData>(
+        `/api/groups?careGroupId=${encodeURIComponent(careGroupId)}`,
+      );
+      if (activeGroupIdRef.current === careGroupId) setGroupData(response);
+      return response;
+    },
+    [],
+  );
 
   const bootstrap = useCallback(async () => {
     setInitialLoading(true);
     setLoadError('');
     try {
-      const nextPeople = await loadPeople();
-      const saved = window.localStorage.getItem(ACTIVE_PERSON_KEY);
+      const session = await requestJson<SessionData>('/api/session');
+      setGroups(session.groups);
+      const savedGroup = window.localStorage.getItem(ACTIVE_GROUP_KEY);
+      const group =
+        session.groups.find((item) => item.id === savedGroup) ||
+        session.groups[0];
+      if (!group) {
+        setPeople([]);
+        setInitialLoading(false);
+        return;
+      }
+      activeGroupIdRef.current = group.id;
+      setActiveGroupId(group.id);
+      window.localStorage.setItem(ACTIVE_GROUP_KEY, group.id);
+      const nextPeople = await loadPeople(group.id);
+      void loadGroup(group.id);
+      const saved = window.localStorage.getItem(
+        `${ACTIVE_PERSON_KEY}:${group.id}`,
+      );
       const selected = chooseActivePerson(nextPeople, saved);
       if (selected) await selectPerson(selected.id);
       else {
@@ -189,7 +271,7 @@ function OrganizerContent() {
     } finally {
       setInitialLoading(false);
     }
-  }, [loadPeople, selectPerson]);
+  }, [loadGroup, loadPeople, selectPerson]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => void bootstrap());
@@ -200,6 +282,25 @@ function OrganizerContent() {
       requestRef.current?.abort();
     };
   }, [bootstrap]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== 'visible' || !activeGroupIdRef.current)
+        return;
+      void loadPeople();
+      void loadGroup();
+      if (activePersonIdRef.current)
+        void loadPersonData(activePersonIdRef.current);
+    };
+    const interval = window.setInterval(refresh, 30_000);
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [loadGroup, loadPeople, loadPersonData]);
 
   function toggleTheme() {
     const next = !document.documentElement.classList.contains('dark');
@@ -227,13 +328,85 @@ function OrganizerContent() {
     setPersonDialog({ open: true, person });
   }
 
+  async function createGroup(name: string) {
+    const result = await requestJson<{ id: string }>('/api/groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const session = await requestJson<SessionData>('/api/session');
+    setGroups(session.groups);
+    await selectGroup(result.id);
+    toast.add({
+      title: 'Grupo creado',
+      description: 'Ya podés sumar personas e invitar familiares.',
+      type: 'success',
+    });
+  }
+
+  async function selectGroup(careGroupId: string) {
+    activeGroupIdRef.current = careGroupId;
+    setActiveGroupId(careGroupId);
+    setInviteUrl('');
+    setData(null);
+    setPeople([]);
+    window.localStorage.setItem(ACTIVE_GROUP_KEY, careGroupId);
+    const nextPeople = await loadPeople(careGroupId);
+    void loadGroup(careGroupId);
+    const saved = window.localStorage.getItem(
+      `${ACTIVE_PERSON_KEY}:${careGroupId}`,
+    );
+    const selected = chooseActivePerson(nextPeople, saved);
+    if (selected) await selectPerson(selected.id);
+    else {
+      activePersonIdRef.current = null;
+      setActivePersonId(null);
+    }
+  }
+
+  async function createInvitation() {
+    const result = await requestJson<{ token: string }>('/api/invitations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ careGroupId: activeGroupIdRef.current }),
+    });
+    setInviteUrl(`${window.location.origin}/invite/${result.token}`);
+    await loadGroup();
+  }
+
+  async function renameGroup(name: string) {
+    await requestJson('/api/groups', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: activeGroupIdRef.current, name }),
+    });
+    const session = await requestJson<SessionData>('/api/session');
+    setGroups(session.groups);
+    await loadGroup();
+    toast.add({ title: 'Grupo actualizado', type: 'success' });
+  }
+
+  async function revokeInvitation(id: string) {
+    await requestJson(
+      `/api/invitations?careGroupId=${encodeURIComponent(activeGroupIdRef.current)}&id=${encodeURIComponent(id)}`,
+      { method: 'DELETE' },
+    );
+    await loadGroup();
+    toast.add({ title: 'Invitación revocada', type: 'success' });
+  }
+
   async function savePerson(payload: PersonPayload) {
     const editing = personDialog.person;
     if (editing) {
       await requestJson('/api/person', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editing.id, data: payload }),
+        body: JSON.stringify({
+          id: editing.id,
+          careGroupId: activeGroupIdRef.current,
+          version: editing.version,
+          data: payload,
+        }),
       });
       await loadPeople();
       if (editing.id === activePersonIdRef.current)
@@ -247,7 +420,10 @@ function OrganizerContent() {
       const result = await requestJson<{ id: string }>('/api/person', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          careGroupId: activeGroupIdRef.current,
+          data: payload,
+        }),
       });
       await loadPeople();
       await selectPerson(result.id);
@@ -268,7 +444,12 @@ function OrganizerContent() {
       await requestJson('/api/person/archive', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: person.id, archived }),
+        body: JSON.stringify({
+          id: person.id,
+          archived,
+          version: person.version,
+          careGroupId: activeGroupIdRef.current,
+        }),
       });
       const nextPeople = await loadPeople();
       const nextActive = chooseActivePerson(nextPeople);
@@ -316,6 +497,7 @@ function OrganizerContent() {
         entity,
         id,
         personId: targetPersonId,
+        careGroupId: activeGroupIdRef.current,
         data: payload,
       }),
     });
@@ -365,7 +547,7 @@ function OrganizerContent() {
     setBusy(true);
     try {
       await requestJson(
-        `/api/data?entity=${deleteTarget.entity}&id=${encodeURIComponent(deleteTarget.id)}&personId=${encodeURIComponent(deleteTarget.personId)}`,
+        `/api/data?entity=${deleteTarget.entity}&id=${encodeURIComponent(deleteTarget.id)}&personId=${encodeURIComponent(deleteTarget.personId)}&careGroupId=${encodeURIComponent(activeGroupIdRef.current)}`,
         { method: 'DELETE' },
       );
       if (activePersonIdRef.current === deleteTarget.personId)
@@ -391,7 +573,9 @@ function OrganizerContent() {
 
   async function exportBackup() {
     try {
-      const response = await fetch('/api/backup');
+      const response = await authorizedFetch(
+        `/api/backup?careGroupId=${encodeURIComponent(activeGroupIdRef.current)}`,
+      );
       if (!response.ok) {
         const payload = (await response.json()) as { error?: string };
         throw new ApiError(payload.error || 'No se pudo crear el respaldo');
@@ -426,11 +610,14 @@ function OrganizerContent() {
         throw new ApiError('El archivo supera el límite de 5 MB');
       const text = await restoreFile.text();
       JSON.parse(text);
-      await requestJson('/api/backup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: text,
-      });
+      await requestJson(
+        `/api/backup?careGroupId=${encodeURIComponent(activeGroupIdRef.current)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: text,
+        },
+      );
       setRestoreFile(null);
       setManagerOpen(false);
       await bootstrap();
@@ -459,9 +646,37 @@ function OrganizerContent() {
   if (initialLoading) return <AppLoading />;
   if (loadError && people.length === 0)
     return <AppError message={loadError} onRetry={() => void bootstrap()} />;
+  if (groups.length === 0) return <GroupOnboarding onCreate={createGroup} />;
+  const groupCorner = (
+    <div className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-2xl border bg-card p-2 shadow-sm">
+      <select
+        aria-label="Grupo activo"
+        className="h-9 max-w-44 rounded-xl bg-background px-2 text-sm"
+        value={activeGroupId}
+        onChange={(event) => void selectGroup(event.target.value)}
+      >
+        {groups.map((group) => (
+          <option key={group.id} value={group.id}>
+            {group.name}
+          </option>
+        ))}
+      </select>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Cerrar sesión"
+        onClick={() =>
+          void logout({ logoutParams: { returnTo: window.location.origin } })
+        }
+      >
+        <LogOut />
+      </Button>
+    </div>
+  );
   if (people.length === 0)
     return (
       <>
+        {groupCorner}
         <Onboarding onSave={savePerson} />
         <PersonDialog
           person={personDialog.person}
@@ -476,9 +691,11 @@ function OrganizerContent() {
   const activePerson = people.find(
     (person) => person.id === activePersonId && !person.archived,
   );
+  const activeGroup = groups.find((group) => group.id === activeGroupId)!;
   if (!activePerson)
     return (
       <>
+        {groupCorner}
         <NoActivePeople
           onAdd={openAddPerson}
           onManage={() => setManagerOpen(true)}
@@ -547,7 +764,13 @@ function OrganizerContent() {
             </button>
           ))}
         </nav>
-        <div className="mt-auto">
+        <div className="mt-auto grid gap-4">
+          <GroupSwitcher
+            groups={groups}
+            activeId={activeGroupId}
+            onSelect={(id) => void selectGroup(id)}
+            onAdd={() => setGroupDialogOpen(true)}
+          />
           <PersonSwitcher
             activePerson={activePerson}
             people={people}
@@ -555,6 +778,16 @@ function OrganizerContent() {
             onAdd={openAddPerson}
             onManage={() => setManagerOpen(true)}
           />
+          <button
+            className="flex items-center gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() =>
+              void logout({
+                logoutParams: { returnTo: window.location.origin },
+              })
+            }
+          >
+            <LogOut className="size-4" /> Cerrar sesión
+          </button>
         </div>
       </aside>
       <main
@@ -563,7 +796,8 @@ function OrganizerContent() {
         <header className="sticky top-0 z-20 flex min-h-20 items-center justify-between gap-3 border-b border-border/70 bg-background/85 px-5 py-3 backdrop-blur-xl sm:px-8 lg:px-12">
           <div className="min-w-0">
             <p className="truncate text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
-              {header.eyebrow} · Perfil activo: {activePerson.name}
+              {header.eyebrow} · {activeGroup.name} · Perfil activo:{' '}
+              {activePerson.name}
             </p>
             <h1 className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">
               {section === 'home'
@@ -572,6 +806,18 @@ function OrganizerContent() {
             </h1>
           </div>
           <div className="flex items-center gap-2">
+            <select
+              aria-label="Grupo activo"
+              className="h-10 max-w-32 rounded-xl border bg-card px-2 text-xs md:hidden"
+              value={activeGroupId}
+              onChange={(event) => void selectGroup(event.target.value)}
+            >
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </select>
             <div className="md:hidden">
               <PersonSwitcher
                 compact
@@ -601,6 +847,19 @@ function OrganizerContent() {
             >
               <Moon className="dark:hidden" />
               <Sun className="hidden dark:block" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon-lg"
+              aria-label="Cerrar sesión"
+              className="rounded-xl bg-card md:hidden"
+              onClick={() =>
+                void logout({
+                  logoutParams: { returnTo: window.location.origin },
+                })
+              }
+            >
+              <LogOut />
             </Button>
           </div>
         </header>
@@ -665,12 +924,25 @@ function OrganizerContent() {
                   }}
                 />
               )}
+              {section === 'group' && groupData && (
+                <GroupView
+                  data={groupData}
+                  inviteUrl={inviteUrl}
+                  onCreateInvite={() => void createInvitation()}
+                  onCopy={() => {
+                    void navigator.clipboard.writeText(inviteUrl);
+                    toast.add({ title: 'Enlace copiado', type: 'success' });
+                  }}
+                  onRevoke={(id) => void revokeInvitation(id)}
+                  onRename={renameGroup}
+                />
+              )}
             </>
           ) : null}
         </div>
       </main>
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 grid h-[76px] grid-cols-4 border-t bg-card/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 grid h-[76px] grid-cols-5 border-t bg-card/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
         aria-label="Navegación principal móvil"
       >
         {navItems.map(({ id, label, icon: Icon }) => (
@@ -757,6 +1029,47 @@ function OrganizerContent() {
         onCancel={() => setRestoreFile(null)}
         onConfirm={() => void confirmRestore()}
       />
+      <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Crear otro grupo</DialogTitle>
+            <DialogDescription>
+              Podrás administrar personas e integrantes de forma independiente.
+            </DialogDescription>
+          </DialogHeader>
+          <label
+            htmlFor="new-group-name"
+            className="grid gap-2 text-sm font-medium"
+          >
+            Nombre del grupo
+          </label>
+          <Input
+            id="new-group-name"
+            value={groupName}
+            maxLength={120}
+            onChange={(event) => setGroupName(event.target.value)}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGroupDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={!groupName.trim() || busy}
+              onClick={() => {
+                setBusy(true);
+                void createGroup(groupName)
+                  .then(() => {
+                    setGroupDialogOpen(false);
+                    setGroupName('');
+                  })
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Crear grupo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

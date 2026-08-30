@@ -25,6 +25,15 @@ export const personSchema = z.object({
 export const personArchiveSchema = z.object({
   id: z.uuid(),
   archived: z.boolean(),
+  version: z.number().int().positive().optional(),
+});
+
+export const careGroupSchema = z.object({
+  name: cleanText('El nombre del grupo', 120),
+});
+export const membershipRoleSchema = z.enum(['admin', 'member']);
+export const invitationActionSchema = z.object({
+  action: z.enum(['accept', 'reject']),
 });
 
 export const appointmentSchema = z.object({
@@ -119,7 +128,7 @@ export const backupV1Schema = z
     }
   });
 
-export const backupSchema = z
+export const backupV2Schema = z
   .object({
     schemaVersion: z.literal(2),
     exportedAt: z.iso.datetime(),
@@ -156,19 +165,63 @@ export const backupSchema = z
     }
   });
 
+export const backupV3Schema = z
+  .object({
+    schemaVersion: z.literal(3),
+    exportedAt: z.iso.datetime(),
+    careGroup: z.object({ name: cleanText('El nombre del grupo', 120) }),
+    persons: z.array(personBackupSchema).min(1).max(1000),
+    ...backupRecordsSchema,
+  })
+  .superRefine((backup, context) => {
+    const personIds = backup.persons.map((person) => person.id);
+    if (new Set(personIds).size !== personIds.length)
+      context.addIssue({
+        code: 'custom',
+        message: 'El respaldo contiene personas duplicadas',
+      });
+    const knownPeople = new Set(personIds);
+    const records = [
+      ...backup.appointments,
+      ...backup.medications,
+      ...backup.tasks,
+    ];
+    if (records.some((record) => !knownPeople.has(record.personId)))
+      context.addIssue({
+        code: 'custom',
+        message:
+          'El respaldo contiene registros asociados a una persona inexistente',
+      });
+    const ids = records.map((record) => record.id);
+    if (new Set(ids).size !== ids.length)
+      context.addIssue({
+        code: 'custom',
+        message: 'El respaldo contiene identificadores duplicados',
+      });
+  });
+
 export const backupImportSchema = z
-  .union([backupV1Schema, backupSchema])
+  .union([backupV1Schema, backupV2Schema, backupV3Schema])
   .transform((backup) => {
-    if (backup.schemaVersion === 2) return backup;
+    if (backup.schemaVersion === 3) return backup;
+    if (backup.schemaVersion === 2)
+      return {
+        ...backup,
+        schemaVersion: 3 as const,
+        careGroup: { name: 'Grupo restaurado' },
+      };
     return {
-      schemaVersion: 2 as const,
+      schemaVersion: 3 as const,
       exportedAt: backup.exportedAt,
+      careGroup: { name: 'Grupo restaurado' },
       persons: [{ ...backup.person, archived: false }],
       appointments: backup.appointments,
       medications: backup.medications,
       tasks: backup.tasks,
     };
   });
+
+export const backupSchema = backupImportSchema;
 
 export function fieldErrors(error: z.ZodError) {
   const errors: Record<string, string[]> = {};

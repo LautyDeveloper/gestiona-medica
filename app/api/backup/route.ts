@@ -8,41 +8,56 @@ import type {
   Person,
 } from '@/lib/models';
 import { backupImportSchema, fieldErrors } from '@/lib/validation';
+import { authError, requireMembership } from '@/lib/server-auth';
 
 function error(message: string, status: number, details?: unknown) {
   return NextResponse.json({ error: message, details }, { status });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const careGroupId =
+      new URL(request.url).searchParams.get('careGroupId') || '';
+    await requireMembership(request, careGroupId);
     const db = getD1();
-    const [people, appointments, medications, tasks] = await Promise.all([
-      db
-        .prepare(
-          'SELECT id, name, birth_date AS birthDate, relationship, notes, archived FROM persons ORDER BY archived, name COLLATE NOCASE',
-        )
-        .all<Omit<Person, 'archived'> & { archived: number }>(),
-      db
-        .prepare(
-          'SELECT id, person_id AS personId, specialty, doctor, date, time, place, bring, notes, status FROM appointments ORDER BY person_id, date, time',
-        )
-        .all<Appointment>(),
-      db
-        .prepare(
-          'SELECT id, person_id AS personId, name, dose, frequency, doctor, notes, active FROM medications ORDER BY person_id, name',
-        )
-        .all<Omit<Medication, 'active'> & { active: number }>(),
-      db
-        .prepare(
-          'SELECT id, person_id AS personId, title, due_date AS dueDate, priority, status, notes FROM tasks ORDER BY person_id, due_date',
-        )
-        .all<MedicalTask>(),
-    ]);
+    const [group, people, appointments, medications, tasks] = await Promise.all(
+      [
+        db
+          .prepare('SELECT name FROM care_groups WHERE id = ?')
+          .bind(careGroupId)
+          .first<{ name: string }>(),
+        db
+          .prepare(
+            'SELECT id, name, birth_date AS birthDate, relationship, notes, archived FROM persons WHERE care_group_id = ? ORDER BY archived, name COLLATE NOCASE',
+          )
+          .bind(careGroupId)
+          .all<Omit<Person, 'archived'> & { archived: number }>(),
+        db
+          .prepare(
+            'SELECT a.id, a.person_id AS personId, a.specialty, a.doctor, a.date, a.time, a.place, a.bring, a.notes, a.status FROM appointments a JOIN persons p ON p.id = a.person_id WHERE p.care_group_id = ? ORDER BY a.person_id, a.date, a.time',
+          )
+          .bind(careGroupId)
+          .all<Appointment>(),
+        db
+          .prepare(
+            'SELECT m.id, m.person_id AS personId, m.name, m.dose, m.frequency, m.doctor, m.notes, m.active FROM medications m JOIN persons p ON p.id = m.person_id WHERE p.care_group_id = ? ORDER BY m.person_id, m.name',
+          )
+          .bind(careGroupId)
+          .all<Omit<Medication, 'active'> & { active: number }>(),
+        db
+          .prepare(
+            'SELECT t.id, t.person_id AS personId, t.title, t.due_date AS dueDate, t.priority, t.status, t.notes FROM tasks t JOIN persons p ON p.id = t.person_id WHERE p.care_group_id = ? ORDER BY t.person_id, t.due_date',
+          )
+          .bind(careGroupId)
+          .all<MedicalTask>(),
+      ],
+    );
     if (!people.results.length)
       return error('No hay datos para respaldar', 404);
     const backup: BackupData = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       exportedAt: new Date().toISOString(),
+      careGroup: { name: group?.name || 'Grupo familiar' },
       persons: people.results.map((person) => ({
         ...person,
         archived: Boolean(person.archived),
@@ -60,13 +75,18 @@ export async function GET() {
         'Content-Disposition': `attachment; filename="cerca-respaldo-${new Date().toISOString().slice(0, 10)}.json"`,
       },
     });
-  } catch {
-    return error('No se pudo crear el respaldo', 500);
+  } catch (caught) {
+    return caught instanceof Error && 'status' in caught
+      ? authError(caught)
+      : error('No se pudo crear el respaldo', 500);
   }
 }
 
 export async function POST(request: Request) {
   try {
+    const careGroupId =
+      new URL(request.url).searchParams.get('careGroupId') || '';
+    await requireMembership(request, careGroupId, 'admin');
     const contentLength = Number(request.headers.get('content-length') || 0);
     if (contentLength > 5_000_000)
       return error('El archivo supera el límite de 5 MB', 400);
@@ -79,18 +99,36 @@ export async function POST(request: Request) {
       );
     const backup = parsed.data;
     const db = getD1();
+    const personIds = new Map(
+      backup.persons.map((person) => [person.id, crypto.randomUUID()]),
+    );
     await db.batch([
-      db.prepare('DELETE FROM appointments'),
-      db.prepare('DELETE FROM medications'),
-      db.prepare('DELETE FROM tasks'),
-      db.prepare('DELETE FROM persons'),
+      db
+        .prepare(
+          'DELETE FROM appointments WHERE person_id IN (SELECT id FROM persons WHERE care_group_id = ?)',
+        )
+        .bind(careGroupId),
+      db
+        .prepare(
+          'DELETE FROM medications WHERE person_id IN (SELECT id FROM persons WHERE care_group_id = ?)',
+        )
+        .bind(careGroupId),
+      db
+        .prepare(
+          'DELETE FROM tasks WHERE person_id IN (SELECT id FROM persons WHERE care_group_id = ?)',
+        )
+        .bind(careGroupId),
+      db
+        .prepare('DELETE FROM persons WHERE care_group_id = ?')
+        .bind(careGroupId),
       ...backup.persons.map((person) =>
         db
           .prepare(
-            'INSERT INTO persons (id, name, birth_date, relationship, notes, archived) VALUES (?, ?, ?, ?, ?, ?)',
+            'INSERT INTO persons (id, care_group_id, name, birth_date, relationship, notes, archived, version) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
           )
           .bind(
-            person.id,
+            personIds.get(person.id),
+            careGroupId,
             person.name,
             person.birthDate,
             person.relationship,
@@ -101,11 +139,11 @@ export async function POST(request: Request) {
       ...backup.appointments.map((item) =>
         db
           .prepare(
-            'INSERT INTO appointments (id, person_id, specialty, doctor, date, time, place, bring, notes, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO appointments (id, person_id, specialty, doctor, date, time, place, bring, notes, status, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
           )
           .bind(
-            item.id,
-            item.personId,
+            crypto.randomUUID(),
+            personIds.get(item.personId),
             item.specialty,
             item.doctor,
             item.date,
@@ -119,11 +157,11 @@ export async function POST(request: Request) {
       ...backup.medications.map((item) =>
         db
           .prepare(
-            'INSERT INTO medications (id, person_id, name, dose, frequency, doctor, notes, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO medications (id, person_id, name, dose, frequency, doctor, notes, active, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)',
           )
           .bind(
-            item.id,
-            item.personId,
+            crypto.randomUUID(),
+            personIds.get(item.personId),
             item.name,
             item.dose,
             item.frequency,
@@ -135,11 +173,11 @@ export async function POST(request: Request) {
       ...backup.tasks.map((item) =>
         db
           .prepare(
-            'INSERT INTO tasks (id, person_id, title, due_date, priority, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO tasks (id, person_id, title, due_date, priority, status, notes, version) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
           )
           .bind(
-            item.id,
-            item.personId,
+            crypto.randomUUID(),
+            personIds.get(item.personId),
             item.title,
             item.dueDate,
             item.priority,
@@ -150,7 +188,8 @@ export async function POST(request: Request) {
     ]);
     await db.prepare('PRAGMA optimize').run();
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (caught) {
+    if (caught instanceof Error && 'status' in caught) return authError(caught);
     return error(
       'No se pudo restaurar el respaldo; tus datos actuales no fueron modificados',
       500,
