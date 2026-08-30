@@ -16,7 +16,7 @@ const navItems: { id: Section; label: string; icon: typeof Home }[] = [
 ];
 
 const headers: Record<Section, { title: string; eyebrow: string; action?: string; entity?: Entity }> = {
-  home: { title: 'Hola, Lautaro', eyebrow: 'Domingo, 30 de agosto' },
+  home: { title: 'Hola, Lautaro', eyebrow: 'Resumen de hoy' },
   appointments: { title: 'Turnos', eyebrow: 'Agenda médica', action: 'Nuevo turno', entity: 'appointment' },
   medications: { title: 'Medicamentos', eyebrow: 'Tratamiento actual', action: 'Nuevo medicamento', entity: 'medication' },
   tasks: { title: 'Pendientes', eyebrow: 'Cosas por resolver', action: 'Nuevo pendiente', entity: 'task' },

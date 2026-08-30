@@ -9,7 +9,5 @@ export function formatLongDate(date: string) {
 
 export function dueLabel(date: string) {
   if (!date) return 'Sin fecha límite';
-  if (date === '2026-08-30') return 'Hoy';
-  if (date === '2026-08-31') return 'Mañana';
   return formatDate(date);
 }
