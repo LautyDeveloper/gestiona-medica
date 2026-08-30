@@ -7,21 +7,11 @@ export class ApiError extends Error {
   }
 }
 
-let accessTokenProvider: null | (() => Promise<string>) = null;
-export function setAccessTokenProvider(
-  provider: null | (() => Promise<string>),
-) {
-  accessTokenProvider = provider;
-}
-
 export async function authorizedFetch(
   input: RequestInfo | URL,
   init: RequestInit = {},
 ) {
-  const headers = new Headers(init.headers);
-  if (accessTokenProvider)
-    headers.set('Authorization', `Bearer ${await accessTokenProvider()}`);
-  return fetch(input, { ...init, headers });
+  return fetch(input, { ...init, credentials: 'same-origin' });
 }
 
 export async function requestJson<T>(

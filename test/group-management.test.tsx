@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { GroupOnboarding, GroupView } from '@/components/group-management';
+import { GroupView } from '@/components/group-management';
 import type { GroupData } from '@/lib/models';
 
 const data: GroupData = {
@@ -17,74 +17,73 @@ const data: GroupData = {
       id: 'u1',
       username: 'ana',
       displayName: 'Ana',
-      email: 'ana@example.com',
+      userType: 'caregiver',
       role: 'admin',
     },
     {
       id: 'u2',
       username: 'luis',
       displayName: 'Luis',
-      email: 'luis@example.com',
+      userType: 'elder',
       role: 'member',
-    },
-  ],
-  invitations: [
-    {
-      id: 'i1',
-      status: 'pending',
-      expiresAt: '2026-09-06T00:00:00.000Z',
-      createdByName: 'Ana',
     },
   ],
   persons: [{ id: 'p1', name: 'Elena Pérez', archived: false }],
 };
 
-describe('gestión del grupo familiar', () => {
-  it('crea el primer grupo desde el onboarding', async () => {
-    const create = vi.fn().mockResolvedValue(undefined);
-    render(<GroupOnboarding onCreate={create} />);
-    await userEvent.type(
-      screen.getByLabelText('Nombre del grupo'),
-      'Familia Pérez',
-    );
-    await userEvent.click(screen.getByRole('button', { name: 'Crear grupo' }));
-    expect(create).toHaveBeenCalledWith('Familia Pérez');
-  });
+const props = {
+  onRename: vi.fn().mockResolvedValue(undefined),
+  onCreateUser: vi.fn().mockResolvedValue(undefined),
+  onResetPassword: vi.fn().mockResolvedValue(undefined),
+  onChangePassword: vi.fn().mockResolvedValue(undefined),
+};
 
-  it('muestra integrantes, roles e invitaciones al administrador', () => {
-    render(
-      <GroupView
-        data={data}
-        inviteUrl=""
-        onCreateInvite={vi.fn()}
-        onCopy={vi.fn()}
-        onRevoke={vi.fn()}
-        onRename={vi.fn()}
-      />,
-    );
+describe('gestión del grupo familiar', () => {
+  it('muestra integrantes, tipos y personas asociadas', () => {
+    render(<GroupView data={data} {...props} />);
     expect(screen.getByText('Ana')).toBeInTheDocument();
     expect(screen.getByText('Luis')).toBeInTheDocument();
+    expect(screen.getAllByText('Cuidador').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Abuelo').length).toBeGreaterThan(0);
     expect(screen.getByText('Elena Pérez')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Crear invitación' }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Revocar' })).toBeInTheDocument();
   });
 
-  it('oculta las acciones administrativas a un miembro', () => {
+  it('permite al cuidador crear un usuario', async () => {
+    const temporaryPassword = `test-${crypto.randomUUID()}`;
+    const onCreateUser = vi.fn().mockResolvedValue(undefined);
+    render(<GroupView data={data} {...props} onCreateUser={onCreateUser} />);
+    await userEvent.type(
+      screen.getByLabelText('Nombre del nuevo integrante'),
+      'Lucre',
+    );
+    await userEvent.type(
+      screen.getByLabelText('Usuario del nuevo integrante'),
+      'lucre',
+    );
+    await userEvent.type(
+      screen.getByLabelText('Contraseña inicial'),
+      temporaryPassword,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Crear acceso' }));
+    expect(onCreateUser).toHaveBeenCalledWith({
+      username: 'lucre',
+      displayName: 'Lucre',
+      userType: 'elder',
+      password: temporaryPassword,
+    });
+  });
+
+  it('oculta administración de usuarios a un abuelo', () => {
     render(
       <GroupView
         data={{ ...data, group: { ...data.group, role: 'member' } }}
-        inviteUrl=""
-        onCreateInvite={vi.fn()}
-        onCopy={vi.fn()}
-        onRevoke={vi.fn()}
-        onRename={vi.fn()}
+        {...props}
       />,
     );
+    expect(screen.queryByText('Crear usuario')).not.toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: 'Crear invitación' }),
+      screen.queryByText('Restablecer contraseña'),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/Sólo un administrador/)).toBeInTheDocument();
+    expect(screen.getByText('Mi contraseña')).toBeInTheDocument();
   });
 });

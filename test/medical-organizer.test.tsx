@@ -79,7 +79,7 @@ function mockApi() {
           id: 'u1',
           username: 'ana',
           displayName: 'Ana',
-          email: 'ana@example.com',
+          userType: 'caregiver',
         },
         groups: [group],
       });
@@ -87,7 +87,6 @@ function mockApi() {
       return Response.json({
         group,
         members: [],
-        invitations: [],
         persons: people,
       });
     if (url.startsWith('/api/person?'))

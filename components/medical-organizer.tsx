@@ -12,17 +12,8 @@ import {
   Users,
   LogOut,
 } from 'lucide-react';
-import { useAuth0 } from '@auth0/auth0-react';
+import { useLocalAuth } from '@/components/auth-shell';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { RecordDialog } from '@/components/record-dialog';
 import {
   AppointmentsView,
@@ -43,11 +34,7 @@ import {
   type PersonPayload,
 } from '@/components/person-profile';
 import { PersonSwitcher } from '@/components/person-switcher';
-import {
-  GroupOnboarding,
-  GroupSwitcher,
-  GroupView,
-} from '@/components/group-management';
+import { GroupView, type NewUserPayload } from '@/components/group-management';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -73,11 +60,11 @@ import type {
   CareGroup,
   GroupData,
   SessionData,
+  AppUser,
 } from '@/lib/models';
 import { chooseActivePerson } from '@/lib/person-selection';
 
 const ACTIVE_PERSON_KEY = 'activePersonId';
-const ACTIVE_GROUP_KEY = 'activeCareGroupId';
 const navItems: { id: Section; label: string; icon: typeof Home }[] = [
   { id: 'home', label: 'Inicio', icon: Home },
   { id: 'appointments', label: 'Turnos', icon: CalendarDays },
@@ -120,15 +107,13 @@ type DeleteTarget = {
 };
 
 function OrganizerContent() {
-  const { logout } = useAuth0();
+  const { logout } = useLocalAuth();
   const [section, setSection] = useState<Section>('home');
   const [groups, setGroups] = useState<CareGroup[]>([]);
+  const [sessionUser, setSessionUser] = useState<AppUser | null>(null);
   const [activeGroupId, setActiveGroupId] = useState('');
   const activeGroupIdRef = useRef('');
   const [groupData, setGroupData] = useState<GroupData | null>(null);
-  const [inviteUrl, setInviteUrl] = useState('');
-  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
-  const [groupName, setGroupName] = useState('');
   const [people, setPeople] = useState<PersonSummary[]>([]);
   const [activePersonId, setActivePersonId] = useState<string | null>(null);
   const activePersonIdRef = useRef<string | null>(null);
@@ -236,11 +221,9 @@ function OrganizerContent() {
     setLoadError('');
     try {
       const session = await requestJson<SessionData>('/api/session');
+      setSessionUser(session.user);
       setGroups(session.groups);
-      const savedGroup = window.localStorage.getItem(ACTIVE_GROUP_KEY);
-      const group =
-        session.groups.find((item) => item.id === savedGroup) ||
-        session.groups[0];
+      const group = session.groups[0];
       if (!group) {
         setPeople([]);
         setInitialLoading(false);
@@ -248,7 +231,6 @@ function OrganizerContent() {
       }
       activeGroupIdRef.current = group.id;
       setActiveGroupId(group.id);
-      window.localStorage.setItem(ACTIVE_GROUP_KEY, group.id);
       const nextPeople = await loadPeople(group.id);
       void loadGroup(group.id);
       const saved = window.localStorage.getItem(
@@ -328,52 +310,6 @@ function OrganizerContent() {
     setPersonDialog({ open: true, person });
   }
 
-  async function createGroup(name: string) {
-    const result = await requestJson<{ id: string }>('/api/groups', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    });
-    const session = await requestJson<SessionData>('/api/session');
-    setGroups(session.groups);
-    await selectGroup(result.id);
-    toast.add({
-      title: 'Grupo creado',
-      description: 'Ya podés sumar personas e invitar familiares.',
-      type: 'success',
-    });
-  }
-
-  async function selectGroup(careGroupId: string) {
-    activeGroupIdRef.current = careGroupId;
-    setActiveGroupId(careGroupId);
-    setInviteUrl('');
-    setData(null);
-    setPeople([]);
-    window.localStorage.setItem(ACTIVE_GROUP_KEY, careGroupId);
-    const nextPeople = await loadPeople(careGroupId);
-    void loadGroup(careGroupId);
-    const saved = window.localStorage.getItem(
-      `${ACTIVE_PERSON_KEY}:${careGroupId}`,
-    );
-    const selected = chooseActivePerson(nextPeople, saved);
-    if (selected) await selectPerson(selected.id);
-    else {
-      activePersonIdRef.current = null;
-      setActivePersonId(null);
-    }
-  }
-
-  async function createInvitation() {
-    const result = await requestJson<{ token: string }>('/api/invitations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ careGroupId: activeGroupIdRef.current }),
-    });
-    setInviteUrl(`${window.location.origin}/invite/${result.token}`);
-    await loadGroup();
-  }
-
   async function renameGroup(name: string) {
     await requestJson('/api/groups', {
       method: 'PATCH',
@@ -386,13 +322,50 @@ function OrganizerContent() {
     toast.add({ title: 'Grupo actualizado', type: 'success' });
   }
 
-  async function revokeInvitation(id: string) {
-    await requestJson(
-      `/api/invitations?careGroupId=${encodeURIComponent(activeGroupIdRef.current)}&id=${encodeURIComponent(id)}`,
-      { method: 'DELETE' },
-    );
+  async function createUser(payload: NewUserPayload) {
+    await requestJson('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        careGroupId: activeGroupIdRef.current,
+        ...payload,
+      }),
+    });
     await loadGroup();
-    toast.add({ title: 'Invitación revocada', type: 'success' });
+    toast.add({
+      title: 'Usuario creado',
+      description: 'Ya puede iniciar sesión con su nueva cuenta.',
+      type: 'success',
+    });
+  }
+
+  async function resetUserPassword(userId: string, password: string) {
+    await requestJson('/api/users', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        careGroupId: activeGroupIdRef.current,
+        userId,
+        password,
+      }),
+    });
+    toast.add({
+      title: 'Contraseña restablecida',
+      description: 'Las sesiones anteriores de ese usuario fueron cerradas.',
+      type: 'success',
+    });
+  }
+
+  async function changeOwnPassword(
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    await requestJson('/api/account/password', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    await logout();
   }
 
   async function savePerson(payload: PersonPayload) {
@@ -646,28 +619,24 @@ function OrganizerContent() {
   if (initialLoading) return <AppLoading />;
   if (loadError && people.length === 0)
     return <AppError message={loadError} onRetry={() => void bootstrap()} />;
-  if (groups.length === 0) return <GroupOnboarding onCreate={createGroup} />;
+  if (groups.length === 0)
+    return (
+      <AppError
+        message="No pudimos encontrar el grupo familiar."
+        onRetry={() => void bootstrap()}
+      />
+    );
   const groupCorner = (
     <div className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-2xl border bg-card p-2 shadow-sm">
-      <select
-        aria-label="Grupo activo"
-        className="h-9 max-w-44 rounded-xl bg-background px-2 text-sm"
-        value={activeGroupId}
-        onChange={(event) => void selectGroup(event.target.value)}
-      >
-        {groups.map((group) => (
-          <option key={group.id} value={group.id}>
-            {group.name}
-          </option>
-        ))}
-      </select>
+      <span className="px-2 text-sm">
+        {groups[0]?.name} ·{' '}
+        {sessionUser?.userType === 'caregiver' ? 'Cuidador' : 'Abuelo'}
+      </span>
       <Button
         variant="ghost"
         size="icon"
         aria-label="Cerrar sesión"
-        onClick={() =>
-          void logout({ logoutParams: { returnTo: window.location.origin } })
-        }
+        onClick={() => void logout()}
       >
         <LogOut />
       </Button>
@@ -765,12 +734,13 @@ function OrganizerContent() {
           ))}
         </nav>
         <div className="mt-auto grid gap-4">
-          <GroupSwitcher
-            groups={groups}
-            activeId={activeGroupId}
-            onSelect={(id) => void selectGroup(id)}
-            onAdd={() => setGroupDialogOpen(true)}
-          />
+          <div className="rounded-xl border bg-card p-3 text-xs text-muted-foreground">
+            <p className="font-medium text-foreground">{activeGroup.name}</p>
+            <p>
+              {sessionUser?.displayName} ·{' '}
+              {sessionUser?.userType === 'caregiver' ? 'Cuidador' : 'Abuelo'}
+            </p>
+          </div>
           <PersonSwitcher
             activePerson={activePerson}
             people={people}
@@ -780,11 +750,7 @@ function OrganizerContent() {
           />
           <button
             className="flex items-center gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
-            onClick={() =>
-              void logout({
-                logoutParams: { returnTo: window.location.origin },
-              })
-            }
+            onClick={() => void logout()}
           >
             <LogOut className="size-4" /> Cerrar sesión
           </button>
@@ -806,18 +772,6 @@ function OrganizerContent() {
             </h1>
           </div>
           <div className="flex items-center gap-2">
-            <select
-              aria-label="Grupo activo"
-              className="h-10 max-w-32 rounded-xl border bg-card px-2 text-xs md:hidden"
-              value={activeGroupId}
-              onChange={(event) => void selectGroup(event.target.value)}
-            >
-              {groups.map((group) => (
-                <option key={group.id} value={group.id}>
-                  {group.name}
-                </option>
-              ))}
-            </select>
             <div className="md:hidden">
               <PersonSwitcher
                 compact
@@ -853,11 +807,7 @@ function OrganizerContent() {
               size="icon-lg"
               aria-label="Cerrar sesión"
               className="rounded-xl bg-card md:hidden"
-              onClick={() =>
-                void logout({
-                  logoutParams: { returnTo: window.location.origin },
-                })
-              }
+              onClick={() => void logout()}
             >
               <LogOut />
             </Button>
@@ -927,14 +877,10 @@ function OrganizerContent() {
               {section === 'group' && groupData && (
                 <GroupView
                   data={groupData}
-                  inviteUrl={inviteUrl}
-                  onCreateInvite={() => void createInvitation()}
-                  onCopy={() => {
-                    void navigator.clipboard.writeText(inviteUrl);
-                    toast.add({ title: 'Enlace copiado', type: 'success' });
-                  }}
-                  onRevoke={(id) => void revokeInvitation(id)}
                   onRename={renameGroup}
+                  onCreateUser={createUser}
+                  onResetPassword={resetUserPassword}
+                  onChangePassword={changeOwnPassword}
                 />
               )}
             </>
@@ -1029,47 +975,6 @@ function OrganizerContent() {
         onCancel={() => setRestoreFile(null)}
         onConfirm={() => void confirmRestore()}
       />
-      <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Crear otro grupo</DialogTitle>
-            <DialogDescription>
-              Podrás administrar personas e integrantes de forma independiente.
-            </DialogDescription>
-          </DialogHeader>
-          <label
-            htmlFor="new-group-name"
-            className="grid gap-2 text-sm font-medium"
-          >
-            Nombre del grupo
-          </label>
-          <Input
-            id="new-group-name"
-            value={groupName}
-            maxLength={120}
-            onChange={(event) => setGroupName(event.target.value)}
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setGroupDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button
-              disabled={!groupName.trim() || busy}
-              onClick={() => {
-                setBusy(true);
-                void createGroup(groupName)
-                  .then(() => {
-                    setGroupDialogOpen(false);
-                    setGroupName('');
-                  })
-                  .finally(() => setBusy(false));
-              }}
-            >
-              Crear grupo
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

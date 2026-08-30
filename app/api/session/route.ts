@@ -10,7 +10,7 @@ export async function GET(request: Request) {
       (SELECT COUNT(*) FROM memberships mm WHERE mm.care_group_id = g.id) AS memberCount,
       (SELECT COUNT(*) FROM persons p WHERE p.care_group_id = g.id) AS personCount
       FROM memberships m JOIN care_groups g ON g.id = m.care_group_id
-      WHERE m.user_id = ? ORDER BY g.name COLLATE NOCASE`)
+      WHERE m.user_id = ? ORDER BY g.created_at, g.id LIMIT 1`)
       .bind(user.id)
       .all<CareGroup>();
     return Response.json({

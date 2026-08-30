@@ -32,8 +32,44 @@ export const careGroupSchema = z.object({
   name: cleanText('El nombre del grupo', 120),
 });
 export const membershipRoleSchema = z.enum(['admin', 'member']);
-export const invitationActionSchema = z.object({
-  action: z.enum(['accept', 'reject']),
+export const userTypeSchema = z.enum(['caregiver', 'elder']);
+export const usernameSchema = z
+  .string()
+  .trim()
+  .min(2, 'El usuario debe tener al menos 2 caracteres')
+  .max(40, 'El usuario es demasiado largo')
+  .regex(
+    /^[\p{L}\p{N}._-]+$/u,
+    'Usá solamente letras, números, punto, guion o guion bajo',
+  );
+export const passwordSchema = z
+  .string()
+  .min(8, 'La contraseña debe tener al menos 8 caracteres')
+  .max(128, 'La contraseña es demasiado larga');
+export const loginSchema = z.object({
+  username: usernameSchema,
+  password: z.string().min(1, 'Ingresá tu contraseña').max(128),
+});
+export const bootstrapSchema = loginSchema.extend({
+  displayName: cleanText('El nombre', 120),
+  groupName: cleanText('El nombre del grupo', 120),
+  password: passwordSchema,
+});
+export const createUserSchema = z.object({
+  careGroupId: z.uuid(),
+  username: usernameSchema,
+  displayName: cleanText('El nombre', 120),
+  userType: userTypeSchema,
+  password: passwordSchema,
+});
+export const resetPasswordSchema = z.object({
+  careGroupId: z.uuid(),
+  userId: z.uuid(),
+  password: passwordSchema,
+});
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Ingresá tu contraseña actual').max(128),
+  newPassword: passwordSchema,
 });
 
 export const appointmentSchema = z.object({

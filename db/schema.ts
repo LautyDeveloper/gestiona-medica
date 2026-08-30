@@ -5,19 +5,42 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
 
-export const users = sqliteTable('users', {
-  id: text('id').primaryKey(),
-  authSubject: text('auth_subject').notNull().unique(),
-  username: text('username').notNull(),
-  displayName: text('display_name').notNull(),
-  email: text('email').notNull(),
-  emailVerified: integer('email_verified', { mode: 'boolean' })
-    .notNull()
-    .default(false),
-  createdAt: text('created_at').notNull(),
-  lastSeenAt: text('last_seen_at').notNull(),
-});
+export const users = sqliteTable(
+  'users',
+  {
+    id: text('id').primaryKey(),
+    username: text('username').notNull(),
+    displayName: text('display_name').notNull(),
+    passwordHash: text('password_hash').notNull(),
+    userType: text('user_type').notNull(),
+    failedLoginCount: integer('failed_login_count').notNull().default(0),
+    lockedUntil: text('locked_until'),
+    createdAt: text('created_at').notNull(),
+    lastSeenAt: text('last_seen_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_users_username_nocase').on(
+      sql`${table.username} COLLATE NOCASE`,
+    ),
+  ],
+);
+
+export const sessions = sqliteTable(
+  'sessions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    tokenHash: text('token_hash').notNull().unique(),
+    createdAt: text('created_at').notNull(),
+    expiresAt: text('expires_at').notNull(),
+    revokedAt: text('revoked_at'),
+  },
+  (table) => [index('idx_sessions_user').on(table.userId)],
+);
 
 export const careGroups = sqliteTable('care_groups', {
   id: text('id').primaryKey(),
@@ -44,28 +67,6 @@ export const memberships = sqliteTable(
       table.userId,
     ),
     index('idx_memberships_user').on(table.userId),
-  ],
-);
-
-export const careGroupInvitations = sqliteTable(
-  'care_group_invitations',
-  {
-    id: text('id').primaryKey(),
-    careGroupId: text('care_group_id')
-      .notNull()
-      .references(() => careGroups.id),
-    tokenHash: text('token_hash').notNull().unique(),
-    createdByUserId: text('created_by_user_id')
-      .notNull()
-      .references(() => users.id),
-    status: text('status').notNull().default('pending'),
-    expiresAt: text('expires_at').notNull(),
-    createdAt: text('created_at').notNull(),
-    respondedByUserId: text('responded_by_user_id').references(() => users.id),
-    respondedAt: text('responded_at'),
-  },
-  (table) => [
-    index('idx_invitations_group_status').on(table.careGroupId, table.status),
   ],
 );
 
