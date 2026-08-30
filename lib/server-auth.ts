@@ -122,6 +122,12 @@ export async function requireMembership(
 export function authError(error: unknown) {
   if (error instanceof AuthError)
     return Response.json({ error: error.message }, { status: error.status });
+  console.error(
+    'Authentication request failed',
+    error instanceof Error
+      ? { name: error.name, message: error.message, stack: error.stack }
+      : { type: typeof error },
+  );
   return Response.json(
     { error: 'Ocurrió un error inesperado' },
     { status: 500 },
