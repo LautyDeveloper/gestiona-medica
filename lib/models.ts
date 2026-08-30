@@ -6,12 +6,13 @@ export type Section =
   | 'group';
 export type Entity = 'appointment' | 'medication' | 'task';
 export type MembershipRole = 'admin' | 'member';
+export type UserType = 'caregiver' | 'elder';
 
 export interface AppUser {
   id: string;
   username: string;
   displayName: string;
-  email: string;
+  userType: UserType;
 }
 export interface CareGroup {
   id: string;
@@ -24,14 +25,8 @@ export interface GroupMember {
   id: string;
   username: string;
   displayName: string;
-  email: string;
+  userType: UserType;
   role: MembershipRole;
-}
-export interface GroupInvitation {
-  id: string;
-  status: 'pending' | 'accepted' | 'rejected' | 'revoked' | 'expired';
-  expiresAt: string;
-  createdByName: string;
 }
 export interface SessionData {
   user: AppUser;
@@ -40,7 +35,6 @@ export interface SessionData {
 export interface GroupData {
   group: CareGroup;
   members: GroupMember[];
-  invitations: GroupInvitation[];
   persons: Pick<Person, 'id' | 'name' | 'archived'>[];
 }
 

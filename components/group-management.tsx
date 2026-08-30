@@ -1,134 +1,73 @@
 'use client';
 
-import { Copy, Link2, Plus, ShieldCheck, UserRound } from 'lucide-react';
+import { KeyRound, ShieldCheck, UserPlus, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import type { CareGroup, GroupData } from '@/lib/models';
+import type { GroupData, UserType } from '@/lib/models';
 
-export function GroupOnboarding({
-  onCreate,
-}: {
-  onCreate: (name: string) => Promise<void>;
-}) {
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  return (
-    <main className="grid min-h-dvh place-items-center bg-background p-6">
-      <form
-        className="w-full max-w-md rounded-3xl border bg-card p-8"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          setBusy(true);
-          setError('');
-          try {
-            await onCreate(name);
-          } catch (caught) {
-            setError(
-              caught instanceof Error
-                ? caught.message
-                : 'No se pudo crear el grupo',
-            );
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <p className="text-xs font-medium uppercase tracking-[.16em] text-muted-foreground">
-          Primer paso
-        </p>
-        <h1 className="mt-2 text-2xl font-semibold">
-          Creá tu grupo de cuidado
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Después podrás sumar perfiles e invitar familiares mediante un enlace.
-        </p>
-        <label
-          htmlFor="first-group-name"
-          className="mt-6 grid gap-2 text-sm font-medium"
-        >
-          Nombre del grupo
-        </label>
-        <Input
-          id="first-group-name"
-          required
-          maxLength={120}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder="Ej. Familia Aquino"
-        />
-        {error && (
-          <p role="alert" className="mt-3 text-sm text-destructive">
-            {error}
-          </p>
-        )}
-        <Button type="submit" className="mt-5 w-full" disabled={busy}>
-          {busy ? 'Creando…' : 'Crear grupo'}
-        </Button>
-      </form>
-    </main>
-  );
-}
-
-export function GroupSwitcher({
-  groups,
-  activeId,
-  onSelect,
-  onAdd,
-}: {
-  groups: CareGroup[];
-  activeId: string;
-  onSelect: (id: string) => void;
-  onAdd: () => void;
-}) {
-  return (
-    <div className="grid gap-2">
-      <span className="text-xs font-medium text-muted-foreground">
-        Grupo activo
-      </span>
-      <select
-        aria-label="Grupo activo"
-        className="h-10 rounded-xl border bg-card px-3 text-sm"
-        value={activeId}
-        onChange={(event) => onSelect(event.target.value)}
-      >
-        {groups.map((group) => (
-          <option key={group.id} value={group.id}>
-            {group.name}
-          </option>
-        ))}
-      </select>
-      <button
-        className="flex items-center gap-2 text-xs text-primary"
-        onClick={onAdd}
-      >
-        <Plus className="size-3" /> Crear otro grupo
-      </button>
-    </div>
-  );
-}
+export type NewUserPayload = {
+  username: string;
+  displayName: string;
+  userType: UserType;
+  password: string;
+};
 
 export function GroupView({
   data,
-  inviteUrl,
-  onCreateInvite,
-  onCopy,
-  onRevoke,
   onRename,
+  onCreateUser,
+  onResetPassword,
+  onChangePassword,
 }: {
   data: GroupData;
-  inviteUrl: string;
-  onCreateInvite: () => void;
-  onCopy: () => void;
-  onRevoke: (id: string) => void;
   onRename: (name: string) => Promise<void>;
+  onCreateUser: (payload: NewUserPayload) => Promise<void>;
+  onResetPassword: (userId: string, password: string) => Promise<void>;
+  onChangePassword: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<void>;
 }) {
   const admin = data.group.role === 'admin';
   const [name, setName] = useState(data.group.name);
+  const [newUser, setNewUser] = useState<NewUserPayload>({
+    username: '',
+    displayName: '',
+    userType: 'elder',
+    password: '',
+  });
+  const [resetUserId, setResetUserId] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function run(action: () => Promise<void>, after?: () => void) {
+    setBusy(true);
+    setError('');
+    try {
+      await action();
+      after?.();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'No se pudo guardar');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-2">
+      {error && (
+        <p
+          role="alert"
+          className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive lg:col-span-2"
+        >
+          {error}
+        </p>
+      )}
       {admin && (
         <Card className="lg:col-span-2">
           <CardHeader>
@@ -142,8 +81,8 @@ export function GroupView({
               onChange={(event) => setName(event.target.value)}
             />
             <Button
-              disabled={!name.trim() || name.trim() === data.group.name}
-              onClick={() => void onRename(name)}
+              disabled={busy || !name.trim() || name.trim() === data.group.name}
+              onClick={() => void run(() => onRename(name))}
             >
               Guardar
             </Button>
@@ -156,82 +95,192 @@ export function GroupView({
         </CardHeader>
         <CardContent className="grid gap-3">
           {data.members.map((member) => (
-            <div
-              key={member.id}
-              className="flex items-center gap-3 rounded-xl border p-3"
-            >
-              <UserRound className="text-primary" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{member.displayName}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  @{member.username} · {member.email}
-                </p>
+            <div key={member.id} className="rounded-xl border p-3">
+              <div className="flex items-center gap-3">
+                <UserRound className="text-primary" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{member.displayName}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    @{member.username}
+                  </p>
+                </div>
+                <span className="rounded-full bg-secondary px-2 py-1 text-xs">
+                  {member.userType === 'caregiver' ? 'Cuidador' : 'Abuelo'}
+                </span>
               </div>
-              <span className="rounded-full bg-secondary px-2 py-1 text-xs">
-                {member.role === 'admin' ? 'Administrador' : 'Miembro'}
-              </span>
+              {admin && (
+                <Button
+                  className="mt-3"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setResetUserId(member.id);
+                    setResetPassword('');
+                  }}
+                >
+                  <KeyRound /> Restablecer contraseña
+                </Button>
+              )}
+              {resetUserId === member.id && (
+                <form
+                  className="mt-3 flex gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void run(
+                      () => onResetPassword(member.id, resetPassword),
+                      () => {
+                        setResetUserId('');
+                        setResetPassword('');
+                      },
+                    );
+                  }}
+                >
+                  <Input
+                    aria-label={`Nueva contraseña para ${member.displayName}`}
+                    type="password"
+                    required
+                    minLength={8}
+                    maxLength={128}
+                    value={resetPassword}
+                    onChange={(event) => setResetPassword(event.target.value)}
+                    placeholder="Contraseña temporal"
+                  />
+                  <Button type="submit" disabled={busy}>
+                    Guardar
+                  </Button>
+                </form>
+              )}
             </div>
           ))}
         </CardContent>
       </Card>
+      {admin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <UserPlus className="size-5" /> Crear usuario
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form
+              className="grid gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void run(
+                  () => onCreateUser(newUser),
+                  () =>
+                    setNewUser({
+                      username: '',
+                      displayName: '',
+                      userType: 'elder',
+                      password: '',
+                    }),
+                );
+              }}
+            >
+              <Input
+                aria-label="Nombre del nuevo integrante"
+                required
+                maxLength={120}
+                placeholder="Nombre"
+                value={newUser.displayName}
+                onChange={(event) =>
+                  setNewUser((value) => ({
+                    ...value,
+                    displayName: event.target.value,
+                  }))
+                }
+              />
+              <Input
+                aria-label="Usuario del nuevo integrante"
+                required
+                minLength={2}
+                maxLength={40}
+                placeholder="Usuario"
+                value={newUser.username}
+                onChange={(event) =>
+                  setNewUser((value) => ({
+                    ...value,
+                    username: event.target.value,
+                  }))
+                }
+              />
+              <select
+                aria-label="Tipo de usuario"
+                className="h-10 rounded-xl border bg-card px-3 text-sm"
+                value={newUser.userType}
+                onChange={(event) =>
+                  setNewUser((value) => ({
+                    ...value,
+                    userType: event.target.value as UserType,
+                  }))
+                }
+              >
+                <option value="elder">Abuelo</option>
+                <option value="caregiver">Cuidador</option>
+              </select>
+              <Input
+                aria-label="Contraseña inicial"
+                required
+                type="password"
+                minLength={8}
+                maxLength={128}
+                placeholder="Contraseña inicial"
+                value={newUser.password}
+                onChange={(event) =>
+                  setNewUser((value) => ({
+                    ...value,
+                    password: event.target.value,
+                  }))
+                }
+              />
+              <Button type="submit" disabled={busy}>
+                <UserPlus /> Crear acceso
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Link2 className="size-5" /> Invitaciones
+            <ShieldCheck className="size-5" /> Mi contraseña
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {admin ? (
-            <>
-              <p className="text-sm text-muted-foreground">
-                Generá un enlace de un solo uso, válido durante siete días.
-              </p>
-              {inviteUrl ? (
-                <div className="mt-4 flex gap-2">
-                  <Input readOnly value={inviteUrl} />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    aria-label="Copiar invitación"
-                    onClick={onCopy}
-                  >
-                    <Copy />
-                  </Button>
-                </div>
-              ) : (
-                <Button className="mt-4" onClick={onCreateInvite}>
-                  Crear invitación
-                </Button>
-              )}
-              <div className="mt-5 grid gap-2">
-                {data.invitations
-                  .filter((invite) => invite.status === 'pending')
-                  .map((invite) => (
-                    <div
-                      key={invite.id}
-                      className="flex items-center justify-between rounded-xl border p-3 text-sm"
-                    >
-                      <span>
-                        Vence{' '}
-                        {new Date(invite.expiresAt).toLocaleDateString('es-AR')}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onRevoke(invite.id)}
-                      >
-                        Revocar
-                      </Button>
-                    </div>
-                  ))}
-              </div>
-            </>
-          ) : (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <ShieldCheck className="size-4" /> Sólo un administrador puede
-              crear invitaciones.
-            </p>
-          )}
+          <form
+            className="grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run(() => onChangePassword(currentPassword, newPassword));
+            }}
+          >
+            <Input
+              aria-label="Contraseña actual"
+              required
+              type="password"
+              maxLength={128}
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              placeholder="Contraseña actual"
+            />
+            <Input
+              aria-label="Nueva contraseña"
+              required
+              type="password"
+              minLength={8}
+              maxLength={128}
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              placeholder="Nueva contraseña"
+            />
+            <Button type="submit" variant="outline" disabled={busy}>
+              Cambiar contraseña
+            </Button>
+          </form>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Al cambiarla se cerrarán todas tus sesiones.
+          </p>
         </CardContent>
       </Card>
       <Card>
