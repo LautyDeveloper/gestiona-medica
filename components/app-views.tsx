@@ -45,7 +45,7 @@ function StatusBadge({
   };
   return (
     <span
-      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${tones[tone]}`}
+      className={`inline-flex rounded-full border border-current/10 px-2.5 py-1 text-xs font-semibold ${tones[tone]}`}
     >
       {children}
     </span>
@@ -78,8 +78,8 @@ export function HomeView({
   ) {
     return (
       <div className="page-rise grid min-h-[60dvh] place-items-center">
-        <section className="w-full max-w-2xl rounded-3xl border border-dashed bg-card/60 p-7 text-center sm:p-10">
-          <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-secondary text-primary">
+        <section className="app-surface w-full max-w-2xl rounded-3xl border-dashed p-7 text-center sm:p-10">
+          <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15">
             <CheckCircle2 className="size-7" />
           </div>
           <p className="mt-5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -125,24 +125,26 @@ export function HomeView({
         aria-label="Resumen principal"
       >
         {next ? (
-          <article className="relative overflow-hidden rounded-3xl bg-primary p-6 text-primary-foreground shadow-[0_18px_60px_-34px_rgba(23,72,54,.7)] sm:p-8">
+          <article className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary via-primary to-prescription p-6 text-primary-foreground shadow-[var(--shadow-elevated)] ring-1 ring-white/10 sm:p-8">
             <div
-              className="absolute -right-12 -top-16 size-52 rounded-full border-[38px] border-white/[.05]"
+              className="absolute -right-12 -top-16 size-52 rounded-full border-[38px] border-primary-foreground/[.07]"
               aria-hidden="true"
             />
             <div className="relative">
               <div className="flex items-center justify-between">
-                <span className="rounded-full bg-white/12 px-3 py-1 text-xs font-medium">
+                <span className="rounded-full bg-primary-foreground/12 px-3 py-1 text-xs font-semibold ring-1 ring-primary-foreground/10">
                   Próximo turno
                 </span>
-                <span className="text-sm text-white/70">
+                <span className="text-sm text-primary-foreground/75">
                   {formatDate(next.date)}
                 </span>
               </div>
               <h3 className="mt-8 text-3xl font-semibold tracking-[-0.03em]">
                 {next.specialty}
               </h3>
-              <p className="mt-1 text-base text-white/75">{next.doctor}</p>
+              <p className="mt-1 text-base text-primary-foreground/80">
+                {next.doctor}
+              </p>
               <div className="mt-7 flex flex-wrap gap-x-5 gap-y-3 text-sm">
                 <span className="flex items-center gap-2 capitalize">
                   <CalendarDays className="size-4" />{' '}
@@ -155,8 +157,8 @@ export function HomeView({
                   <MapPin className="size-4" /> {next.place}
                 </span>
               </div>
-              <div className="mt-7 rounded-2xl bg-black/10 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white/60">
+              <div className="mt-7 rounded-2xl bg-primary-foreground/10 p-4 ring-1 ring-primary-foreground/10 backdrop-blur-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary-foreground/65">
                   Qué llevar
                 </p>
                 <p className="mt-2 text-sm leading-6">{next.bring}</p>
@@ -164,7 +166,7 @@ export function HomeView({
             </div>
           </article>
         ) : (
-          <article className="grid min-h-72 place-items-center rounded-3xl border bg-card p-8 text-center">
+          <article className="app-surface grid min-h-72 place-items-center rounded-3xl p-8 text-center">
             <div>
               <CheckCircle2 className="mx-auto size-8 text-primary" />
               <h3 className="mt-3 font-semibold">No hay turnos próximos</h3>
@@ -174,7 +176,7 @@ export function HomeView({
             </div>
           </article>
         )}
-        <article className="rounded-3xl border bg-card p-6 shadow-[0_14px_45px_-34px_rgba(35,58,45,.45)] sm:p-7">
+        <article className="app-surface rounded-3xl p-6 sm:p-7">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold">Pendientes próximos</p>
@@ -183,7 +185,7 @@ export function HomeView({
                 resolver
               </p>
             </div>
-            <CheckCircle2 className="size-5 text-primary" />
+            <CheckCircle2 className="size-5 text-task" />
           </div>
           <div className="mt-5 divide-y">
             {pending.map((task) => (
@@ -191,8 +193,8 @@ export function HomeView({
                 key={task.id}
                 className="flex gap-3 py-4 first:pt-1 last:pb-0"
               >
-                <span className="mt-1 grid size-5 shrink-0 place-items-center rounded-full border-2 border-border">
-                  <span className="size-1.5 rounded-full bg-primary/50" />
+                <span className="mt-1 grid size-5 shrink-0 place-items-center rounded-full border-2 border-task/35">
+                  <span className="size-1.5 rounded-full bg-task" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium leading-5">{task.title}</p>
@@ -231,9 +233,9 @@ export function HomeView({
           {appointments.slice(1, 3).map((appointment) => (
             <div
               key={appointment.id}
-              className="flex items-center gap-4 rounded-2xl border bg-card p-4"
+              className="app-surface interactive-surface flex items-center gap-4 rounded-2xl p-4"
             >
-              <div className="grid size-12 shrink-0 place-items-center rounded-xl bg-secondary text-primary">
+              <div className="grid size-12 shrink-0 place-items-center rounded-xl bg-appointment/12 text-appointment ring-1 ring-appointment/15">
                 <CalendarDays className="size-5" />
               </div>
               <div className="min-w-0 flex-1">
@@ -301,11 +303,11 @@ export function AppointmentsView({
         return (
           <article
             key={item.id}
-            className="rounded-2xl border bg-card p-5 sm:p-6"
+            className="app-surface interactive-surface rounded-2xl border-l-4 border-l-appointment p-5 sm:p-6"
           >
             <div className="flex flex-col gap-5 lg:flex-row lg:items-center">
               <div className="flex min-w-0 flex-1 gap-4">
-                <div className="flex w-14 shrink-0 flex-col items-center justify-center rounded-xl bg-secondary py-2 text-primary">
+                <div className="flex w-14 shrink-0 flex-col items-center justify-center rounded-xl bg-appointment/12 py-2 text-appointment ring-1 ring-appointment/15">
                   <span className="text-xs font-medium uppercase">{month}</span>
                   <span className="text-xl font-semibold">{day}</span>
                 </div>
@@ -423,10 +425,10 @@ export function MedicationsView({
         {visible.map((item) => (
           <article
             key={item.id}
-            className={`flex min-h-56 flex-col rounded-2xl border bg-card p-5 ${!item.active ? 'opacity-65' : ''}`}
+            className={`app-surface interactive-surface flex min-h-56 flex-col rounded-2xl border-t-4 border-t-medication p-5 ${!item.active ? 'opacity-65' : ''}`}
           >
             <div className="flex items-start justify-between">
-              <div className="grid size-11 place-items-center rounded-xl bg-secondary text-primary">
+              <div className="grid size-11 place-items-center rounded-xl bg-medication/12 text-medication ring-1 ring-medication/15">
                 <Pill className="size-5" />
               </div>
               <StatusBadge tone={item.active ? 'green' : 'neutral'}>
@@ -434,7 +436,7 @@ export function MedicationsView({
               </StatusBadge>
             </div>
             <h3 className="mt-5 text-xl font-semibold">{item.name}</h3>
-            <p className="mt-1 text-sm font-medium text-primary">
+            <p className="mt-1 text-sm font-semibold text-medication">
               {item.dose} · {item.frequency}
             </p>
             <p className="mt-3 text-sm text-muted-foreground">
@@ -564,9 +566,12 @@ export function OrdersView({
         {visible.map((item) => {
           const expiry = expiryDetails(item);
           return (
-            <article key={item.id} className="rounded-2xl border bg-card p-5">
+            <article
+              key={item.id}
+              className="app-surface interactive-surface rounded-2xl border-t-4 border-t-order p-5"
+            >
               <div className="flex items-start justify-between gap-3">
-                <div className="grid size-11 place-items-center rounded-xl bg-secondary text-primary">
+                <div className="grid size-11 place-items-center rounded-xl bg-order/12 text-order ring-1 ring-order/15">
                   <ClipboardPlus className="size-5" />
                 </div>
                 <StatusBadge tone={expiry.tone}>{expiry.label}</StatusBadge>
@@ -646,9 +651,12 @@ export function PrescriptionsView({
         {visible.map((item) => {
           const expiry = expiryDetails(item);
           return (
-            <article key={item.id} className="rounded-2xl border bg-card p-5">
+            <article
+              key={item.id}
+              className="app-surface interactive-surface rounded-2xl border-t-4 border-t-prescription p-5"
+            >
               <div className="flex items-start justify-between gap-3">
-                <div className="grid size-11 place-items-center rounded-xl bg-secondary text-primary">
+                <div className="grid size-11 place-items-center rounded-xl bg-prescription/12 text-prescription ring-1 ring-prescription/15">
                   <FileText className="size-5" />
                 </div>
                 <StatusBadge tone={expiry.tone}>{expiry.label}</StatusBadge>
@@ -656,7 +664,7 @@ export function PrescriptionsView({
               <h3 className="mt-4 text-lg font-semibold">
                 {item.medicationName}
               </h3>
-              <p className="mt-1 text-sm font-medium text-primary">
+              <p className="mt-1 text-sm font-semibold text-prescription">
                 {item.presentation} · {item.dose}
               </p>
               <p className="mt-3 text-sm">
@@ -753,7 +761,7 @@ export function TasksView({
       {visible.map((item) => (
         <article
           key={item.id}
-          className={`flex flex-col gap-4 rounded-2xl border bg-card p-4 sm:flex-row sm:items-center sm:p-5 ${item.status === 'Completado' ? 'opacity-60' : ''}`}
+          className={`app-surface interactive-surface flex flex-col gap-4 rounded-2xl border-l-4 border-l-task p-4 sm:flex-row sm:items-center sm:p-5 ${item.status === 'Completado' ? 'opacity-60' : ''}`}
         >
           <button
             onClick={() => onComplete(item)}
@@ -822,18 +830,18 @@ function FilterBar({
 }) {
   return (
     <div
-      className="flex w-full gap-1 overflow-x-auto rounded-xl bg-muted p-1 sm:w-fit"
+      className="app-surface flex w-full gap-1 overflow-x-auto rounded-xl p-1 sm:w-fit"
       aria-label="Filtrar lista"
     >
       {values.map((item) => (
         <button
           key={item.value}
           onClick={() => onChange(item.value)}
-          className={`flex min-h-9 items-center gap-2 whitespace-nowrap rounded-lg px-3 text-sm font-medium transition-colors ${active === item.value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          className={`flex min-h-9 items-center gap-2 whitespace-nowrap rounded-lg px-3 text-sm font-semibold transition-all ${active === item.value ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}`}
           aria-pressed={active === item.value}
         >
           {item.label}
-          <span className="rounded-full bg-muted-foreground/10 px-1.5 py-0.5 text-[11px]">
+          <span className="rounded-full bg-current/10 px-1.5 py-0.5 text-[11px]">
             {item.count}
           </span>
         </button>
@@ -854,9 +862,9 @@ function EmptyState({
   action?: () => void;
 }) {
   return (
-    <div className="col-span-full grid min-h-64 place-items-center rounded-3xl border border-dashed bg-card/60 p-8 text-center">
+    <div className="app-surface col-span-full grid min-h-64 place-items-center rounded-3xl border-dashed p-8 text-center">
       <div>
-        <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-secondary text-primary">
+        <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15">
           {icon}
         </div>
         <h3 className="mt-4 font-semibold">{title}</h3>

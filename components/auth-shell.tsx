@@ -5,6 +5,7 @@ import { KeyRound, LogIn, RefreshCw, ShieldCheck } from 'lucide-react';
 import { AppLoading } from '@/components/app-feedback';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ThemeSwitcher } from '@/components/theme-switcher';
 import { requestJson } from '@/lib/client-api';
 
 type AuthContextValue = { logout: () => Promise<void> };
@@ -119,9 +120,12 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
     );
   if (mode === 'error')
     return (
-      <main className="grid min-h-dvh place-items-center bg-background px-5 text-foreground">
-        <section className="w-full max-w-md rounded-3xl border bg-card p-8 shadow-xl">
-          <div className="grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground">
+      <main className="relative grid min-h-dvh place-items-center px-5 py-10 text-foreground">
+        <div className="absolute right-5 top-5">
+          <ThemeSwitcher />
+        </div>
+        <section className="app-surface w-full max-w-md rounded-3xl p-8">
+          <div className="grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-primary to-prescription text-primary-foreground shadow-md shadow-primary/20 ring-1 ring-white/15">
             <KeyRound />
           </div>
           <p className="mt-7 text-xs font-medium uppercase tracking-[.16em] text-muted-foreground">
@@ -162,21 +166,24 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
       </main>
     );
   return (
-    <main className="grid min-h-dvh place-items-center bg-background px-5 text-foreground">
+    <main className="relative grid min-h-dvh place-items-center px-5 py-10 text-foreground">
+      <div className="absolute right-5 top-5">
+        <ThemeSwitcher />
+      </div>
       <form
-        className="w-full max-w-md rounded-3xl border bg-card p-8 shadow-xl"
+        className="app-surface w-full max-w-md rounded-3xl p-8 sm:p-9"
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
         }}
       >
-        <div className="grid size-12 place-items-center rounded-2xl bg-primary text-primary-foreground">
+        <div className="grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-primary to-prescription text-primary-foreground shadow-md shadow-primary/20 ring-1 ring-white/15">
           {mode === 'bootstrap' ? <ShieldCheck /> : <KeyRound />}
         </div>
         <p className="mt-7 text-xs font-medium uppercase tracking-[.16em] text-muted-foreground">
           Cerca · Acceso familiar
         </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+        <h1 className="mt-2 text-3xl font-bold tracking-[-0.04em]">
           {mode === 'bootstrap'
             ? 'Configurá el primer cuidador'
             : 'Bienvenido de nuevo'}
@@ -254,7 +261,10 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
           </label>
         </div>
         {error && (
-          <p role="alert" className="mt-4 text-sm text-destructive">
+          <p
+            role="alert"
+            className="mt-4 rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2.5 text-sm font-medium text-destructive"
+          >
             {error}
           </p>
         )}

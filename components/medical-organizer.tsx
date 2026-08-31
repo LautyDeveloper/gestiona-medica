@@ -8,10 +8,8 @@ import {
   Ellipsis,
   FileText,
   Home,
-  Moon,
   Pill,
   Plus,
-  Sun,
   Users,
   LogOut,
 } from 'lucide-react';
@@ -39,6 +37,7 @@ import {
   type PersonPayload,
 } from '@/components/person-profile';
 import { PersonSwitcher } from '@/components/person-switcher';
+import { ThemeSwitcher } from '@/components/theme-switcher';
 import { GroupView, type NewUserPayload } from '@/components/group-management';
 import {
   DropdownMenu,
@@ -80,14 +79,54 @@ import type {
 import { chooseActivePerson } from '@/lib/person-selection';
 
 const ACTIVE_PERSON_KEY = 'activePersonId';
-const navItems: { id: Section; label: string; icon: typeof Home }[] = [
-  { id: 'home', label: 'Inicio', icon: Home },
-  { id: 'appointments', label: 'Turnos', icon: CalendarDays },
-  { id: 'orders', label: 'Órdenes', icon: ClipboardPlus },
-  { id: 'medications', label: 'Medicamentos', icon: Pill },
-  { id: 'prescriptions', label: 'Recetas', icon: FileText },
-  { id: 'tasks', label: 'Pendientes', icon: ClipboardCheck },
-  { id: 'group', label: 'Grupo familiar', icon: Users },
+const navItems: {
+  id: Section;
+  label: string;
+  icon: typeof Home;
+  activeClass: string;
+}[] = [
+  {
+    id: 'home',
+    label: 'Inicio',
+    icon: Home,
+    activeClass: 'bg-primary/10 text-primary ring-primary/15',
+  },
+  {
+    id: 'appointments',
+    label: 'Turnos',
+    icon: CalendarDays,
+    activeClass: 'bg-appointment/10 text-appointment ring-appointment/15',
+  },
+  {
+    id: 'orders',
+    label: 'Órdenes',
+    icon: ClipboardPlus,
+    activeClass: 'bg-order/10 text-order ring-order/15',
+  },
+  {
+    id: 'medications',
+    label: 'Medicamentos',
+    icon: Pill,
+    activeClass: 'bg-medication/10 text-medication ring-medication/15',
+  },
+  {
+    id: 'prescriptions',
+    label: 'Recetas',
+    icon: FileText,
+    activeClass: 'bg-prescription/10 text-prescription ring-prescription/15',
+  },
+  {
+    id: 'tasks',
+    label: 'Pendientes',
+    icon: ClipboardCheck,
+    activeClass: 'bg-task/10 text-task ring-task/15',
+  },
+  {
+    id: 'group',
+    label: 'Grupo familiar',
+    icon: Users,
+    activeClass: 'bg-primary/10 text-primary ring-primary/15',
+  },
 ];
 const headers: Record<
   Section,
@@ -298,8 +337,6 @@ function OrganizerContent() {
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => void bootstrap());
-    const saved = window.localStorage.getItem('theme') === 'dark';
-    document.documentElement.classList.toggle('dark', saved);
     return () => {
       window.cancelAnimationFrame(frame);
       requestRef.current?.abort();
@@ -325,11 +362,6 @@ function OrganizerContent() {
     };
   }, [loadGroup, loadPeople, loadPersonData]);
 
-  function toggleTheme() {
-    const next = !document.documentElement.classList.contains('dark');
-    document.documentElement.classList.toggle('dark', next);
-    window.localStorage.setItem('theme', next ? 'dark' : 'light');
-  }
   function openNew(entity: Entity) {
     setConversion(null);
     setDialog({ open: true, entity, value: null });
@@ -805,23 +837,25 @@ function OrganizerContent() {
 
   const header = headers[section];
   return (
-    <div className="min-h-dvh bg-background text-foreground" aria-busy={busy}>
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar px-4 py-6 md:flex">
+    <div className="min-h-dvh bg-transparent text-foreground" aria-busy={busy}>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar/95 px-4 py-6 shadow-[12px_0_45px_-34px_var(--shadow-color)] backdrop-blur-xl md:flex">
         <div className="flex items-center gap-3 px-3">
-          <div className="grid size-10 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
+          <div className="grid size-11 place-items-center rounded-2xl bg-gradient-to-br from-primary to-prescription text-primary-foreground shadow-md shadow-primary/20 ring-1 ring-white/15">
             <span className="text-lg font-semibold">C</span>
           </div>
           <div>
-            <p className="text-lg font-semibold tracking-tight">Cerca</p>
-            <p className="text-xs text-muted-foreground">Gestión de salud</p>
+            <p className="text-lg font-bold tracking-[-0.03em]">Cerca</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              Salud en familia
+            </p>
           </div>
         </div>
-        <nav className="mt-10 space-y-1" aria-label="Navegación principal">
-          {navItems.map(({ id, label, icon: Icon }) => (
+        <nav className="mt-9 space-y-1.5" aria-label="Navegación principal">
+          {navItems.map(({ id, label, icon: Icon, activeClass }) => (
             <button
               key={id}
               onClick={() => setSection(id)}
-              className={`flex h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors ${section === id ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground'}`}
+              className={`flex h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-all duration-200 ${section === id ? `${activeClass} shadow-sm ring-1` : 'text-muted-foreground hover:translate-x-0.5 hover:bg-sidebar-accent/70 hover:text-foreground'}`}
             >
               <Icon className="size-[18px]" strokeWidth={1.8} />
               {label}
@@ -829,9 +863,9 @@ function OrganizerContent() {
           ))}
         </nav>
         <div className="mt-auto grid gap-4">
-          <div className="rounded-xl border bg-card p-3 text-xs text-muted-foreground">
-            <p className="font-medium text-foreground">{activeGroup.name}</p>
-            <p>{sessionUser?.displayName} · Cuidador</p>
+          <div className="app-surface rounded-2xl p-3.5 text-xs text-muted-foreground">
+            <p className="font-semibold text-foreground">{activeGroup.name}</p>
+            <p className="mt-1">{sessionUser?.displayName} · Cuidador</p>
           </div>
           <PersonSwitcher
             activePerson={activePerson}
@@ -851,13 +885,16 @@ function OrganizerContent() {
       <main
         className={`min-h-dvh pb-24 md:ml-64 md:pb-10 ${busy ? 'pointer-events-none opacity-80' : ''}`}
       >
-        <header className="sticky top-0 z-20 flex min-h-20 items-center justify-between gap-3 border-b border-border/70 bg-background/85 px-5 py-3 backdrop-blur-xl sm:px-8 lg:px-12">
+        <header className="sticky top-0 z-20 flex min-h-20 items-center justify-between gap-3 border-b border-border/70 bg-background/78 px-5 py-3 shadow-[0_12px_35px_-32px_var(--shadow-color)] backdrop-blur-xl sm:px-8 lg:px-12">
           <div className="min-w-0">
-            <p className="truncate text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
-              {header.eyebrow} · {activeGroup.name} · Perfil activo:{' '}
-              {activePerson.name}
+            <p className="flex items-center gap-2 truncate text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              <span className="size-1.5 shrink-0 rounded-full bg-primary shadow-[0_0_0_4px_color-mix(in_oklch,var(--primary)_12%,transparent)]" />
+              <span className="truncate">
+                {header.eyebrow} · {activeGroup.name} · Perfil activo:{' '}
+                {activePerson.name}
+              </span>
             </p>
-            <h1 className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">
+            <h1 className="mt-1 text-xl font-bold tracking-[-0.03em] sm:text-2xl">
               {section === 'home'
                 ? `Hola, ${activePerson.name.split(' ')[0]}`
                 : header.title}
@@ -884,16 +921,7 @@ function OrganizerContent() {
                 {header.action}
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="icon-lg"
-              aria-label="Cambiar tema"
-              onClick={toggleTheme}
-              className="rounded-xl bg-card"
-            >
-              <Moon className="dark:hidden" />
-              <Sun className="hidden dark:block" />
-            </Button>
+            <ThemeSwitcher />
             <Button
               variant="outline"
               size="icon-lg"
@@ -1012,18 +1040,18 @@ function OrganizerContent() {
         </div>
       </main>
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 grid h-[76px] grid-cols-4 border-t bg-card/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 grid h-[78px] grid-cols-4 border-t border-border/80 bg-card/90 px-2 pb-[env(safe-area-inset-bottom)] shadow-[0_-18px_45px_-32px_var(--shadow-color)] backdrop-blur-xl md:hidden"
         aria-label="Navegación principal móvil"
       >
         {navItems
           .filter(({ id }) =>
             (['home', 'appointments', 'medications'] as Section[]).includes(id),
           )
-          .map(({ id, label, icon: Icon }) => (
+          .map(({ id, label, icon: Icon, activeClass }) => (
             <button
               key={id}
               onClick={() => setSection(id)}
-              className={`flex flex-col items-center justify-center gap-1 text-[11px] font-medium ${section === id ? 'text-primary' : 'text-muted-foreground'}`}
+              className={`my-2 flex flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-semibold transition-colors ${section === id ? activeClass : 'text-muted-foreground'}`}
             >
               <Icon
                 className="size-5"
@@ -1034,7 +1062,7 @@ function OrganizerContent() {
           ))}
         <DropdownMenu>
           <DropdownMenuTrigger
-            className={`flex flex-col items-center justify-center gap-1 text-[11px] font-medium ${['orders', 'prescriptions', 'tasks', 'group'].includes(section) ? 'text-primary' : 'text-muted-foreground'}`}
+            className={`my-2 flex flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-semibold transition-colors ${['orders', 'prescriptions', 'tasks', 'group'].includes(section) ? 'bg-primary/10 text-primary' : 'text-muted-foreground'}`}
           >
             <Ellipsis className="size-5" />
             Más
