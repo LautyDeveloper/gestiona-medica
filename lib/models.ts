@@ -14,6 +14,7 @@ export type Entity =
   | 'task';
 export type MembershipRole = 'admin' | 'member';
 export type UserType = 'caregiver' | 'elder';
+export type ElderSection = 'home' | 'appointments' | 'medications';
 
 export interface AppUser {
   id: string;
@@ -143,6 +144,12 @@ export interface AppData {
   medications: Medication[];
   prescriptions: Prescription[];
   tasks: MedicalTask[];
+}
+
+export interface ElderData {
+  person: Pick<Person, 'id' | 'name'>;
+  appointments: Appointment[];
+  medications: Medication[];
 }
 
 export interface PeopleData {

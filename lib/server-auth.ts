@@ -99,6 +99,18 @@ export async function requireCaregiver(request: Request) {
   return user;
 }
 
+export async function requireElder(
+  request: Request,
+): Promise<AppUser & { userType: 'elder' }> {
+  const user = await requireUser(request);
+  if (user.userType !== 'elder')
+    throw new AuthError(
+      'Esta sección es exclusiva para cuentas de abuelo',
+      403,
+    );
+  return { ...user, userType: 'elder' };
+}
+
 export async function requireMembership(
   request: Request,
   careGroupId: string,

@@ -1,0 +1,53 @@
+import { getD1 } from '@/db';
+import type { Appointment, ElderData, Medication, Person } from '@/lib/models';
+import { authError, AuthError, requireElder } from '@/lib/server-auth';
+
+export async function GET(request: Request) {
+  try {
+    const user = await requireElder(request);
+    const db = getD1();
+    const person = await db
+      .prepare(
+        `SELECT p.id, p.name
+         FROM person_access pa JOIN persons p ON p.id = pa.person_id
+         WHERE pa.user_id = ? AND p.archived = 0`,
+      )
+      .bind(user.id)
+      .first<Pick<Person, 'id' | 'name'>>();
+    if (!person)
+      throw new AuthError(
+        'Esta cuenta no tiene un perfil activo asociado',
+        403,
+      );
+
+    const [appointments, medications] = await Promise.all([
+      db
+        .prepare(
+          `SELECT id, person_id AS personId, specialty, doctor, date, time,
+             place, bring, notes, status, version
+           FROM appointments WHERE person_id = ? ORDER BY date, time`,
+        )
+        .bind(person.id)
+        .all<Appointment>(),
+      db
+        .prepare(
+          `SELECT id, person_id AS personId, name, dose, frequency, doctor,
+             notes, active, version
+           FROM medications WHERE person_id = ? ORDER BY active DESC, name COLLATE NOCASE`,
+        )
+        .bind(person.id)
+        .all<Omit<Medication, 'active'> & { active: number }>(),
+    ]);
+
+    return Response.json({
+      person,
+      appointments: appointments.results,
+      medications: medications.results.map((item) => ({
+        ...item,
+        active: Boolean(item.active),
+      })),
+    } satisfies ElderData);
+  } catch (error) {
+    return authError(error);
+  }
+}
