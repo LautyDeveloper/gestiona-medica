@@ -131,4 +131,44 @@ describe('acceso familiar simple', () => {
     );
     expect(await screen.findByText('Aplicación')).toBeInTheDocument();
   });
+
+  it('muestra la pantalla de espera al iniciar sesión como abuelo', async () => {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          input instanceof Request
+            ? input.url
+            : input instanceof URL
+              ? input.href
+              : input;
+        if (url === '/api/auth/bootstrap')
+          return Response.json({ state: 'ready', setupRequired: false });
+        if (url === '/api/session')
+          return Response.json({ error: 'Iniciá sesión' }, { status: 401 });
+        if (url === '/api/auth/login' && init?.method === 'POST')
+          return Response.json({ ok: true, userType: 'elder' });
+        return Response.json({ ok: true });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    render(
+      <AuthShell>
+        <p>Aplicación de cuidadores</p>
+      </AuthShell>,
+    );
+
+    await userEvent.type(await screen.findByLabelText('Usuario'), 'maria');
+    await userEvent.type(screen.getByLabelText('Contraseña'), 'clave-segura');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Iniciar sesión' }),
+    );
+
+    expect(await screen.findByText('Tu acceso está listo')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Aplicación de cuidadores'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Cerrar sesión' }),
+    ).toBeInTheDocument();
+  });
 });

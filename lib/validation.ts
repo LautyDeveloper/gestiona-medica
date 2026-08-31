@@ -45,6 +45,38 @@ export const passwordSchema = z
   .string()
   .min(8, 'La contraseña debe tener al menos 8 caracteres')
   .max(128, 'La contraseña es demasiado larga');
+export const optionalPersonAccessSchema = z
+  .object({
+    username: usernameSchema,
+    password: passwordSchema,
+  })
+  .optional();
+export const createPersonSchema = z.object({
+  careGroupId: z.uuid(),
+  data: personSchema,
+  access: optionalPersonAccessSchema,
+});
+export const createPersonAccessSchema = z.object({
+  careGroupId: z.uuid(),
+  personId: z.uuid(),
+  username: usernameSchema,
+  password: passwordSchema,
+});
+export const updatePersonAccessSchema = z
+  .object({
+    careGroupId: z.uuid(),
+    personId: z.uuid(),
+    username: usernameSchema.optional(),
+    password: passwordSchema.optional(),
+  })
+  .refine(
+    (value) => value.username !== undefined || value.password !== undefined,
+    { message: 'No hay cambios para guardar' },
+  );
+export const deletePersonAccessSchema = z.object({
+  careGroupId: z.uuid(),
+  personId: z.uuid(),
+});
 export const loginSchema = z.object({
   username: usernameSchema,
   password: z.string().min(1, 'Ingresá tu contraseña').max(128),

@@ -133,6 +133,30 @@ export async function POST(request: Request) {
     await db.batch([
       db
         .prepare(
+          `DELETE FROM sessions WHERE user_id IN (
+            SELECT pa.user_id FROM person_access pa
+            JOIN persons p ON p.id = pa.person_id WHERE p.care_group_id = ?
+          )`,
+        )
+        .bind(careGroupId),
+      db
+        .prepare(
+          `DELETE FROM memberships WHERE user_id IN (
+            SELECT pa.user_id FROM person_access pa
+            JOIN persons p ON p.id = pa.person_id WHERE p.care_group_id = ?
+          )`,
+        )
+        .bind(careGroupId),
+      db
+        .prepare(
+          `DELETE FROM users WHERE user_type = 'elder' AND id IN (
+            SELECT pa.user_id FROM person_access pa
+            JOIN persons p ON p.id = pa.person_id WHERE p.care_group_id = ?
+          )`,
+        )
+        .bind(careGroupId),
+      db
+        .prepare(
           'DELETE FROM medical_orders WHERE person_id IN (SELECT id FROM persons WHERE care_group_id = ?)',
         )
         .bind(careGroupId),

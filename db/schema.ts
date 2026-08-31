@@ -92,6 +92,18 @@ export const persons = sqliteTable(
     ),
   ],
 );
+
+export const personAccess = sqliteTable('person_access', {
+  personId: text('person_id')
+    .primaryKey()
+    .references(() => persons.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: text('created_at').notNull(),
+});
+
 export const appointments = sqliteTable(
   'appointments',
   {

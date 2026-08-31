@@ -1,7 +1,14 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
-import { KeyRound, LogIn, RefreshCw, ShieldCheck } from 'lucide-react';
+import {
+  KeyRound,
+  LogIn,
+  LogOut,
+  RefreshCw,
+  ShieldCheck,
+  UserRoundCheck,
+} from 'lucide-react';
 import { AppLoading } from '@/components/app-feedback';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,7 +29,27 @@ export function useLocalAuth() {
   );
 }
 
-type Mode = 'loading' | 'login' | 'bootstrap' | 'authenticated' | 'error';
+type Mode =
+  | 'loading'
+  | 'login'
+  | 'bootstrap'
+  | 'authenticated'
+  | 'elder'
+  | 'error';
+
+async function resolveSessionMode(): Promise<
+  'login' | 'authenticated' | 'elder'
+> {
+  const session = await fetch('/api/session', { cache: 'no-store' });
+  if (session.ok) {
+    const data = (await session.json()) as {
+      user?: { userType?: 'caregiver' | 'elder' };
+    };
+    return data.user?.userType === 'elder' ? 'elder' : 'authenticated';
+  }
+  if (session.status === 401) return 'login';
+  throw new Error('No pudimos comprobar tu sesión.');
+}
 
 async function resolveAccessMode(): Promise<Mode> {
   const bootstrapResponse = await fetch('/api/auth/bootstrap', {
@@ -54,10 +81,7 @@ async function resolveAccessMode(): Promise<Mode> {
     );
   if (state === 'setup-required') return 'bootstrap';
 
-  const session = await fetch('/api/session', { cache: 'no-store' });
-  if (session.ok) return 'authenticated';
-  if (session.status === 401) return 'login';
-  throw new Error('session');
+  return resolveSessionMode();
 }
 
 export function AuthShell({ children }: { children: React.ReactNode }) {
@@ -86,7 +110,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
     setBusy(true);
     setError('');
     try {
-      await requestJson(
+      const result = await requestJson<{ userType?: 'caregiver' | 'elder' }>(
         mode === 'bootstrap' ? '/api/auth/bootstrap' : '/api/auth/login',
         {
           method: 'POST',
@@ -98,7 +122,13 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
           ),
         },
       );
-      setMode('authenticated');
+      setMode(
+        mode === 'bootstrap'
+          ? 'authenticated'
+          : result.userType === 'elder'
+            ? 'elder'
+            : 'authenticated',
+      );
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : 'No se pudo ingresar',
@@ -117,6 +147,38 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
   if (mode === 'authenticated')
     return (
       <AuthContext.Provider value={{ logout }}>{children}</AuthContext.Provider>
+    );
+  if (mode === 'elder')
+    return (
+      <main className="relative grid min-h-dvh place-items-center px-5 py-10 text-foreground">
+        <div className="absolute right-5 top-5">
+          <ThemeSwitcher />
+        </div>
+        <section className="app-surface w-full max-w-md rounded-3xl p-8 text-center sm:p-9">
+          <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-gradient-to-br from-primary to-prescription text-primary-foreground shadow-md shadow-primary/20 ring-1 ring-white/15">
+            <UserRoundCheck className="size-7" />
+          </div>
+          <p className="mt-7 text-xs font-medium uppercase tracking-[.16em] text-muted-foreground">
+            Cerca · Acceso personal
+          </p>
+          <h1 className="mt-2 text-3xl font-bold tracking-[-0.04em]">
+            Tu acceso está listo
+          </h1>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            Próximamente vas a poder consultar tu información de salud desde una
+            vista simple y preparada para vos.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            className="mt-7 w-full"
+            onClick={() => void logout()}
+          >
+            <LogOut /> Cerrar sesión
+          </Button>
+        </section>
+      </main>
     );
   if (mode === 'error')
     return (

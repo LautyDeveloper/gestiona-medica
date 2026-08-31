@@ -77,10 +77,10 @@ export async function requireUser(request: Request): Promise<AppUser> {
   const now = new Date().toISOString();
   const user = await getD1()
     .prepare(
-      `SELECT u.id, u.username, u.display_name AS displayName
+      `SELECT u.id, u.username, u.display_name AS displayName, u.user_type AS userType
        FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?
-         AND u.user_type = 'caregiver'`,
+         AND u.user_type IN ('caregiver', 'elder')`,
     )
     .bind(await hashToken(token), now)
     .first<AppUser>();
@@ -92,12 +92,19 @@ export async function requireUser(request: Request): Promise<AppUser> {
   return user;
 }
 
+export async function requireCaregiver(request: Request) {
+  const user = await requireUser(request);
+  if (user.userType !== 'caregiver')
+    throw new AuthError('Esta acción requiere una cuenta de cuidador', 403);
+  return user;
+}
+
 export async function requireMembership(
   request: Request,
   careGroupId: string,
   role?: MembershipRole,
 ) {
-  const user = await requireUser(request);
+  const user = await requireCaregiver(request);
   const membership = await getD1()
     .prepare(
       'SELECT role FROM memberships WHERE user_id = ? AND care_group_id = ?',

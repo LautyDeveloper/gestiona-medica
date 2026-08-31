@@ -13,11 +13,13 @@ export type Entity =
   | 'prescription'
   | 'task';
 export type MembershipRole = 'admin' | 'member';
+export type UserType = 'caregiver' | 'elder';
 
 export interface AppUser {
   id: string;
   username: string;
   displayName: string;
+  userType: UserType;
 }
 export interface CareGroup {
   id: string;
@@ -32,10 +34,17 @@ export interface GroupMember {
   displayName: string;
   role: MembershipRole;
 }
-export interface SessionData {
-  user: AppUser;
-  groups: CareGroup[];
-}
+export type SessionData =
+  | {
+      user: AppUser & { userType: 'caregiver' };
+      groups: CareGroup[];
+      elderPerson: null;
+    }
+  | {
+      user: AppUser & { userType: 'elder' };
+      groups: [];
+      elderPerson: Pick<Person, 'id' | 'name' | 'careGroupId'>;
+    };
 export interface GroupData {
   group: CareGroup;
   members: GroupMember[];
@@ -51,6 +60,7 @@ export interface Person {
   notes: string;
   archived: boolean;
   version?: number;
+  access?: { username: string } | null;
 }
 
 export interface PersonSummary extends Person {
@@ -142,7 +152,7 @@ export interface PeopleData {
 export interface BackupDataV1 {
   schemaVersion: 1;
   exportedAt: string;
-  person: Omit<Person, 'archived' | 'careGroupId' | 'version'>;
+  person: Omit<Person, 'archived' | 'careGroupId' | 'version' | 'access'>;
   appointments: Omit<Appointment, 'version'>[];
   medications: Omit<Medication, 'version'>[];
   tasks: Omit<MedicalTask, 'version'>[];
@@ -152,7 +162,7 @@ export interface BackupData {
   schemaVersion: 4;
   exportedAt: string;
   careGroup: { name: string };
-  persons: Omit<Person, 'careGroupId' | 'version'>[];
+  persons: Omit<Person, 'careGroupId' | 'version' | 'access'>[];
   appointments: Omit<Appointment, 'version'>[];
   orders: Omit<MedicalOrder, 'version'>[];
   medications: Omit<Medication, 'version'>[];

@@ -10,7 +10,7 @@ export async function GET(request: Request) {
     const db = getD1();
     const group = await db
       .prepare(`SELECT g.id, g.name, ? AS role,
-      (SELECT COUNT(*) FROM memberships WHERE care_group_id = g.id) AS memberCount,
+      (SELECT COUNT(*) FROM memberships cm JOIN users cu ON cu.id = cm.user_id WHERE cm.care_group_id = g.id AND cu.user_type = 'caregiver') AS memberCount,
       (SELECT COUNT(*) FROM persons WHERE care_group_id = g.id) AS personCount FROM care_groups g WHERE g.id = ?`)
       .bind(membership.role, id)
       .first<CareGroup>();

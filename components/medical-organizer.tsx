@@ -34,6 +34,7 @@ import {
   Onboarding,
   PeopleManagerDialog,
   PersonDialog,
+  type PersonAccessPayload,
   type PersonPayload,
 } from '@/components/person-profile';
 import { PersonSwitcher } from '@/components/person-switcher';
@@ -460,8 +461,14 @@ function OrganizerContent() {
     await logout();
   }
 
-  async function savePerson(payload: PersonPayload) {
+  async function savePerson(
+    payload: PersonPayload,
+    access: PersonAccessPayload,
+  ) {
     const editing = personDialog.person;
+    const canManageAccess =
+      groups.find((group) => group.id === activeGroupIdRef.current)?.role ===
+      'admin';
     if (editing) {
       await requestJson('/api/person', {
         method: 'PATCH',
@@ -473,6 +480,38 @@ function OrganizerContent() {
           data: payload,
         }),
       });
+      if (canManageAccess && editing.access && !access.enabled) {
+        await requestJson('/api/person/access', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            careGroupId: activeGroupIdRef.current,
+            personId: editing.id,
+          }),
+        });
+      } else if (canManageAccess && !editing.access && access.enabled) {
+        await requestJson('/api/person/access', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            careGroupId: activeGroupIdRef.current,
+            personId: editing.id,
+            username: access.username,
+            password: access.password,
+          }),
+        });
+      } else if (canManageAccess && editing.access && access.enabled) {
+        await requestJson('/api/person/access', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            careGroupId: activeGroupIdRef.current,
+            personId: editing.id,
+            username: access.username,
+            ...(access.password ? { password: access.password } : {}),
+          }),
+        });
+      }
       await Promise.all([loadPeople(), loadGroup()]);
       if (editing.id === activePersonIdRef.current)
         await loadPersonData(editing.id);
@@ -488,6 +527,14 @@ function OrganizerContent() {
         body: JSON.stringify({
           careGroupId: activeGroupIdRef.current,
           data: payload,
+          ...(canManageAccess && access.enabled
+            ? {
+                access: {
+                  username: access.username,
+                  password: access.password,
+                },
+              }
+            : {}),
         }),
       });
       await Promise.all([loadPeople(), loadGroup()]);
@@ -773,13 +820,17 @@ function OrganizerContent() {
     return (
       <>
         {groupCorner}
-        <Onboarding onSave={savePerson} />
+        <Onboarding
+          onSave={savePerson}
+          canManageAccess={groups[0]?.role === 'admin'}
+        />
         <PersonDialog
           person={personDialog.person}
           open={personDialog.open}
           onOpenChange={(open) =>
             setPersonDialog((current) => ({ ...current, open }))
           }
+          canManageAccess={groups[0]?.role === 'admin'}
           onSave={savePerson}
         />
       </>
@@ -802,6 +853,7 @@ function OrganizerContent() {
           onOpenChange={(open) =>
             setPersonDialog((current) => ({ ...current, open }))
           }
+          canManageAccess={groups[0]?.role === 'admin'}
           onSave={savePerson}
         />
         <PeopleManagerDialog
@@ -1105,6 +1157,7 @@ function OrganizerContent() {
         onOpenChange={(open) =>
           setPersonDialog((current) => ({ ...current, open }))
         }
+        canManageAccess={activeGroup.role === 'admin'}
         onSave={savePerson}
       />
       <PeopleManagerDialog

@@ -24,23 +24,30 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ApiError } from '@/lib/client-api';
 import type { Person, PersonSummary } from '@/lib/models';
-import { personSchema } from '@/lib/validation';
+import { passwordSchema, personSchema, usernameSchema } from '@/lib/validation';
 
 export type PersonPayload = Pick<
   Person,
   'name' | 'birthDate' | 'relationship' | 'notes'
 >;
+export type PersonAccessPayload = {
+  enabled: boolean;
+  username: string;
+  password: string;
+};
 
 function PersonForm({
   id,
   value,
   submitLabel,
+  canManageAccess,
   onSave,
 }: {
   id: string;
   value?: Person;
   submitLabel: string;
-  onSave: (data: PersonPayload) => Promise<void>;
+  canManageAccess: boolean;
+  onSave: (data: PersonPayload, access: PersonAccessPayload) => Promise<void>;
 }) {
   const [form, setForm] = useState<PersonPayload>(() =>
     value
@@ -52,6 +59,11 @@ function PersonForm({
         }
       : { name: '', birthDate: '', relationship: '', notes: '' },
   );
+  const [access, setAccess] = useState<PersonAccessPayload>(() => ({
+    enabled: Boolean(value?.access),
+    username: value?.access?.username || '',
+    password: '',
+  }));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -74,9 +86,34 @@ function PersonForm({
       setErrors(next);
       return;
     }
+    if (canManageAccess && access.enabled) {
+      const username = usernameSchema.safeParse(access.username);
+      const passwordRequired = !value?.access;
+      const password =
+        passwordRequired || access.password
+          ? passwordSchema.safeParse(access.password)
+          : null;
+      if (!username.success || (password && !password.success)) {
+        setErrors({
+          ...(!username.success
+            ? {
+                username:
+                  username.error.issues[0]?.message || 'Usuario inválido',
+              }
+            : {}),
+          ...(password && !password.success
+            ? {
+                password:
+                  password.error.issues[0]?.message || 'Contraseña inválida',
+              }
+            : {}),
+        });
+        return;
+      }
+    }
     setSaving(true);
     try {
-      await onSave(parsed.data);
+      await onSave(parsed.data, access);
     } catch (error) {
       if (error instanceof ApiError && error.details)
         setErrors(
@@ -173,6 +210,89 @@ function PersonForm({
           placeholder="Información general que quieras tener presente"
         />,
       )}
+      {canManageAccess && (
+        <section className="grid gap-3 rounded-2xl border bg-muted/20 p-4">
+          <label className="flex items-center gap-3 text-sm font-semibold">
+            <input
+              type="checkbox"
+              className="size-4 accent-primary"
+              checked={access.enabled}
+              onChange={(event) =>
+                setAccess((current) => ({
+                  ...current,
+                  enabled: event.target.checked,
+                }))
+              }
+            />
+            Puede iniciar sesión
+          </label>
+          <p className="text-xs leading-5 text-muted-foreground">
+            Le permite ingresar con una cuenta de Abuelo vinculada únicamente a
+            este perfil.
+          </p>
+          {access.enabled && (
+            <div className="grid gap-3">
+              <label className="grid gap-1.5 text-sm font-medium">
+                Usuario
+                <Input
+                  required
+                  minLength={2}
+                  maxLength={40}
+                  autoComplete="off"
+                  value={access.username}
+                  onChange={(event) => {
+                    setAccess((current) => ({
+                      ...current,
+                      username: event.target.value,
+                    }));
+                    setErrors((current) => ({ ...current, username: '' }));
+                  }}
+                  placeholder="maria"
+                />
+                {errors.username && (
+                  <span className="text-xs font-normal text-destructive">
+                    {errors.username}
+                  </span>
+                )}
+              </label>
+              <label className="grid gap-1.5 text-sm font-medium">
+                {value?.access ? 'Nueva contraseña (opcional)' : 'Contraseña'}
+                <Input
+                  required={!value?.access}
+                  type="password"
+                  minLength={8}
+                  maxLength={128}
+                  autoComplete="new-password"
+                  value={access.password}
+                  onChange={(event) => {
+                    setAccess((current) => ({
+                      ...current,
+                      password: event.target.value,
+                    }));
+                    setErrors((current) => ({ ...current, password: '' }));
+                  }}
+                  placeholder={
+                    value?.access
+                      ? 'Dejala vacía para conservarla'
+                      : 'Mínimo 8 caracteres'
+                  }
+                />
+                {errors.password && (
+                  <span className="text-xs font-normal text-destructive">
+                    {errors.password}
+                  </span>
+                )}
+              </label>
+              {value?.access && (
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Si desmarcás el acceso, la cuenta se eliminará y sus sesiones
+                  se cerrarán al guardar.
+                </p>
+              )}
+            </div>
+          )}
+        </section>
+      )}
       <Button className="mt-1" type="submit" form={id} disabled={saving}>
         {saving ? 'Guardando…' : submitLabel}
       </Button>
@@ -182,8 +302,10 @@ function PersonForm({
 
 export function Onboarding({
   onSave,
+  canManageAccess = true,
 }: {
-  onSave: (data: PersonPayload) => Promise<void>;
+  onSave: (data: PersonPayload, access: PersonAccessPayload) => Promise<void>;
+  canManageAccess?: boolean;
 }) {
   return (
     <main className="grid min-h-dvh place-items-center bg-transparent px-5 py-10 text-foreground">
@@ -204,6 +326,7 @@ export function Onboarding({
         <PersonForm
           id="onboarding-form"
           submitLabel="Empezar a organizar"
+          canManageAccess={canManageAccess}
           onSave={onSave}
         />
       </section>
@@ -248,11 +371,13 @@ export function PersonDialog({
   open,
   onOpenChange,
   onSave,
+  canManageAccess,
 }: {
   person: Person | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (data: PersonPayload) => Promise<void>;
+  canManageAccess: boolean;
+  onSave: (data: PersonPayload, access: PersonAccessPayload) => Promise<void>;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -271,6 +396,7 @@ export function PersonDialog({
           id="person-form"
           value={person || undefined}
           submitLabel={person ? 'Guardar cambios' : 'Crear perfil'}
+          canManageAccess={canManageAccess}
           onSave={onSave}
         />
         <DialogFooter className="-mx-5 -mb-5 mt-1 sm:-mx-6 sm:-mb-6">

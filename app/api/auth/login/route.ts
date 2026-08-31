@@ -5,6 +5,7 @@ import { loginSchema } from '@/lib/validation';
 
 type LoginUser = {
   id: string;
+  userType: 'caregiver' | 'elder';
   passwordHash: string;
   failedLoginCount: number;
   lockedUntil: string | null;
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
   const db = getD1();
   const user = await db
     .prepare(
-      `SELECT id, password_hash AS passwordHash, failed_login_count AS failedLoginCount,
+      `SELECT id, user_type AS userType, password_hash AS passwordHash, failed_login_count AS failedLoginCount,
        locked_until AS lockedUntil FROM users WHERE username = ? COLLATE NOCASE`,
     )
     .bind(parsed.data.username)
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
     .run();
   const cookie = await createSession(request, user.id);
   return Response.json(
-    { ok: true },
+    { ok: true, userType: user.userType },
     { headers: { 'Set-Cookie': cookie } },
   );
 }
