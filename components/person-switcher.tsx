@@ -4,6 +4,7 @@ import { Check, ChevronDown, Plus, Settings2, UserRound } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -65,20 +66,22 @@ export function PersonSwitcher({
         align={compact ? 'end' : 'start'}
         className="min-w-60"
       >
-        <DropdownMenuLabel>Cambiar de persona</DropdownMenuLabel>
-        {activePeople.map((person) => (
-          <DropdownMenuItem
-            key={person.id}
-            onClick={() => onSelect(person.id)}
-            className="min-h-10"
-          >
-            <UserRound />
-            <span className="flex-1 truncate">{person.name}</span>
-            {person.id === activePerson.id && (
-              <Check className="text-primary" />
-            )}
-          </DropdownMenuItem>
-        ))}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Cambiar de persona</DropdownMenuLabel>
+          {activePeople.map((person) => (
+            <DropdownMenuItem
+              key={person.id}
+              onClick={() => onSelect(person.id)}
+              className="min-h-10"
+            >
+              <UserRound />
+              <span className="flex-1 truncate">{person.name}</span>
+              {person.id === activePerson.id && (
+                <Check className="text-primary" />
+              )}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onAdd}>
           <Plus />
