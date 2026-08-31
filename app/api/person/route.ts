@@ -18,7 +18,9 @@ export async function GET(request: Request) {
       .prepare(`
       SELECT p.id, p.care_group_id AS careGroupId, p.name, p.birth_date AS birthDate, p.relationship, p.notes, p.archived, p.version,
         (SELECT COUNT(*) FROM appointments a WHERE a.person_id = p.id) AS appointmentCount,
+        (SELECT COUNT(*) FROM medical_orders o WHERE o.person_id = p.id) AS orderCount,
         (SELECT COUNT(*) FROM medications m WHERE m.person_id = p.id) AS medicationCount,
+        (SELECT COUNT(*) FROM prescriptions r WHERE r.person_id = p.id) AS prescriptionCount,
         (SELECT COUNT(*) FROM tasks t WHERE t.person_id = p.id) AS taskCount
       FROM persons p
       WHERE p.care_group_id = ?
@@ -31,7 +33,9 @@ export async function GET(request: Request) {
         ...person,
         archived: Boolean(person.archived),
         appointmentCount: Number(person.appointmentCount),
+        orderCount: Number(person.orderCount),
         medicationCount: Number(person.medicationCount),
+        prescriptionCount: Number(person.prescriptionCount),
         taskCount: Number(person.taskCount),
       })),
     } satisfies PeopleData);

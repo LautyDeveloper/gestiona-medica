@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   AppointmentsView,
   MedicationsView,
+  OrdersView,
+  PrescriptionsView,
   TasksView,
 } from '@/components/app-views';
 
@@ -126,5 +128,92 @@ describe('filtros de listas', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Crear ahora' }));
     expect(onNew).toHaveBeenCalledOnce();
+  });
+
+  it('separa órdenes pendientes, utilizadas y vencidas', async () => {
+    vi.setSystemTime(new Date('2026-08-31T12:00:00Z'));
+    const pending = {
+      id: 'o1',
+      personId,
+      specialty: 'Cardiología',
+      reason: 'Control',
+      requestedBy: 'Dra. A',
+      issueDate: '2026-08-01',
+      expirationDate: '2026-09-10',
+      notes: '',
+      status: 'pending' as const,
+      appointmentId: null,
+      usedAt: null,
+    };
+    render(
+      <OrdersView
+        items={[
+          pending,
+          {
+            ...pending,
+            id: 'o2',
+            specialty: 'Clínica',
+            expirationDate: '2026-08-01',
+          },
+          {
+            ...pending,
+            id: 'o3',
+            specialty: 'Neurología',
+            status: 'used',
+          },
+        ]}
+        onNew={noop}
+        onEdit={noop}
+        onConvert={noop}
+        onDelete={noop}
+      />,
+    );
+    expect(screen.getByText('Cardiología')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /Sacar turno/ }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Vencidas/ }));
+    expect(screen.getByText('Clínica')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Sacar turno/ }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Utilizadas/ }));
+    expect(screen.getByText('Neurología')).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it('permite convertir una receta pendiente en medicamento', async () => {
+    vi.setSystemTime(new Date('2026-08-31T12:00:00Z'));
+    const prescription = {
+      id: 'r1',
+      personId,
+      medicationName: 'Losartán',
+      presentation: 'Comprimidos de 50 mg',
+      dose: '50 mg',
+      frequency: 'Una vez por día',
+      duration: '30 días',
+      prescribedBy: 'Dra. A',
+      issueDate: '2026-08-01',
+      expirationDate: '2026-09-10',
+      notes: '',
+      status: 'pending' as const,
+      medicationId: null,
+      usedAt: null,
+    };
+    const onConvert = vi.fn();
+    render(
+      <PrescriptionsView
+        items={[prescription]}
+        onNew={noop}
+        onEdit={noop}
+        onConvert={onConvert}
+        onDelete={noop}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: /Agregar a medicamentos/ }),
+    );
+    expect(onConvert).toHaveBeenCalledWith(prescription);
+    vi.useRealTimers();
   });
 });

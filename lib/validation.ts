@@ -123,6 +123,45 @@ export const medicationSchema = z.object({
   active: z.boolean().default(true),
 });
 
+function documentDates<T extends z.ZodRawShape>(shape: T) {
+  return z.object(shape).superRefine((value, context) => {
+    const dates = value as { issueDate?: string; expirationDate?: string };
+    if (
+      dates.issueDate &&
+      dates.expirationDate &&
+      dates.expirationDate < dates.issueDate
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['expirationDate'],
+        message: 'El vencimiento no puede ser anterior a la emisión',
+      });
+  });
+}
+
+export const orderSchema = documentDates({
+  personId: z.uuid().optional(),
+  specialty: cleanText('La especialidad', 100),
+  reason: cleanText('El motivo', 500),
+  requestedBy: cleanText('El médico solicitante', 120),
+  issueDate: isoDate,
+  expirationDate: isoDate,
+  notes: optionalText(1000),
+});
+
+export const prescriptionSchema = documentDates({
+  personId: z.uuid().optional(),
+  medicationName: cleanText('El medicamento', 120),
+  presentation: cleanText('La presentación', 120),
+  dose: cleanText('La dosis', 80),
+  frequency: cleanText('La frecuencia', 120),
+  duration: cleanText('La duración', 120),
+  prescribedBy: cleanText('El médico prescriptor', 120),
+  issueDate: isoDate,
+  expirationDate: isoDate,
+  notes: optionalText(1000),
+});
+
 export const taskSchema = z.object({
   personId: z.uuid().optional(),
   title: cleanText('El título', 200),
@@ -132,11 +171,19 @@ export const taskSchema = z.object({
   notes: optionalText(1000),
 });
 
-export const entitySchema = z.enum(['appointment', 'medication', 'task']);
+export const entitySchema = z.enum([
+  'appointment',
+  'order',
+  'medication',
+  'prescription',
+  'task',
+]);
 
 export const recordSchemas = {
   appointment: appointmentSchema,
+  order: orderSchema,
   medication: medicationSchema,
+  prescription: prescriptionSchema,
   task: taskSchema,
 };
 
@@ -155,6 +202,35 @@ const medicationBackupSchema = medicationSchema.extend({
 const taskBackupSchema = taskSchema.extend({
   id: z.uuid(),
   personId: z.uuid(),
+});
+const orderBackupSchema = documentDates({
+  id: z.uuid(),
+  personId: z.uuid(),
+  specialty: cleanText('La especialidad', 100),
+  reason: cleanText('El motivo', 500),
+  requestedBy: cleanText('El médico solicitante', 120),
+  issueDate: isoDate,
+  expirationDate: isoDate,
+  notes: optionalText(1000),
+  status: z.enum(['pending', 'used']),
+  appointmentId: z.uuid().nullable(),
+  usedAt: z.iso.datetime().nullable(),
+});
+const prescriptionBackupSchema = documentDates({
+  id: z.uuid(),
+  personId: z.uuid(),
+  medicationName: cleanText('El medicamento', 120),
+  presentation: cleanText('La presentación', 120),
+  dose: cleanText('La dosis', 80),
+  frequency: cleanText('La frecuencia', 120),
+  duration: cleanText('La duración', 120),
+  prescribedBy: cleanText('El médico prescriptor', 120),
+  issueDate: isoDate,
+  expirationDate: isoDate,
+  notes: optionalText(1000),
+  status: z.enum(['pending', 'used']),
+  medicationId: z.uuid().nullable(),
+  usedAt: z.iso.datetime().nullable(),
 });
 
 const backupRecordsSchema = {
@@ -263,23 +339,95 @@ export const backupV3Schema = z
       });
   });
 
+export const backupV4Schema = z
+  .object({
+    schemaVersion: z.literal(4),
+    exportedAt: z.iso.datetime(),
+    careGroup: z.object({ name: cleanText('El nombre del grupo', 120) }),
+    persons: z.array(personBackupSchema).min(1).max(1000),
+    ...backupRecordsSchema,
+    orders: z.array(orderBackupSchema).max(10000),
+    prescriptions: z.array(prescriptionBackupSchema).max(10000),
+  })
+  .superRefine((backup, context) => {
+    const personIds = backup.persons.map((person) => person.id);
+    if (new Set(personIds).size !== personIds.length)
+      context.addIssue({
+        code: 'custom',
+        message: 'El respaldo contiene personas duplicadas',
+      });
+    const knownPeople = new Set(personIds);
+    const records = [
+      ...backup.appointments,
+      ...backup.orders,
+      ...backup.medications,
+      ...backup.prescriptions,
+      ...backup.tasks,
+    ];
+    if (records.some((record) => !knownPeople.has(record.personId)))
+      context.addIssue({
+        code: 'custom',
+        message:
+          'El respaldo contiene registros asociados a una persona inexistente',
+      });
+    const ids = records.map((record) => record.id);
+    if (new Set(ids).size !== ids.length)
+      context.addIssue({
+        code: 'custom',
+        message: 'El respaldo contiene identificadores duplicados',
+      });
+    const appointments = new Map(
+      backup.appointments.map((item) => [item.id, item.personId]),
+    );
+    const medications = new Map(
+      backup.medications.map((item) => [item.id, item.personId]),
+    );
+    if (
+      backup.orders.some(
+        (item) =>
+          item.appointmentId &&
+          appointments.get(item.appointmentId) !== item.personId,
+      ) ||
+      backup.prescriptions.some(
+        (item) =>
+          item.medicationId &&
+          medications.get(item.medicationId) !== item.personId,
+      )
+    )
+      context.addIssue({
+        code: 'custom',
+        message: 'El respaldo contiene vínculos de documentos inválidos',
+      });
+  });
+
 export const backupImportSchema = z
-  .union([backupV1Schema, backupV2Schema, backupV3Schema])
+  .union([backupV1Schema, backupV2Schema, backupV3Schema, backupV4Schema])
   .transform((backup) => {
-    if (backup.schemaVersion === 3) return backup;
+    if (backup.schemaVersion === 4) return backup;
+    if (backup.schemaVersion === 3)
+      return {
+        ...backup,
+        schemaVersion: 4 as const,
+        orders: [],
+        prescriptions: [],
+      };
     if (backup.schemaVersion === 2)
       return {
         ...backup,
-        schemaVersion: 3 as const,
+        schemaVersion: 4 as const,
         careGroup: { name: 'Grupo restaurado' },
+        orders: [],
+        prescriptions: [],
       };
     return {
-      schemaVersion: 3 as const,
+      schemaVersion: 4 as const,
       exportedAt: backup.exportedAt,
       careGroup: { name: 'Grupo restaurado' },
       persons: [{ ...backup.person, archived: false }],
       appointments: backup.appointments,
+      orders: [],
       medications: backup.medications,
+      prescriptions: [],
       tasks: backup.tasks,
     };
   });

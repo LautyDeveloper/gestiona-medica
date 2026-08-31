@@ -289,7 +289,11 @@ export function PersonDialog({
 
 function countLabel(person: PersonSummary) {
   const total =
-    person.appointmentCount + person.medicationCount + person.taskCount;
+    person.appointmentCount +
+    person.orderCount +
+    person.medicationCount +
+    person.prescriptionCount +
+    person.taskCount;
   return total === 0
     ? 'Sin información cargada'
     : `${total} ${total === 1 ? 'registro' : 'registros'}`;

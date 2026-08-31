@@ -23,6 +23,8 @@ const legacyMigrations = [
   '0003_solid_mongu.sql',
   '0004_silky_thundra.sql',
 ];
+const documentMigration = '0006_medical_orders_prescriptions.sql';
+const documentTables = ['medical_orders', 'prescriptions'];
 
 const expectedColumns = {
   appointments: [
@@ -39,6 +41,20 @@ const expectedColumns = {
     'version',
   ],
   care_groups: ['id', 'name', 'created_at'],
+  medical_orders: [
+    'id',
+    'person_id',
+    'specialty',
+    'reason',
+    'requested_by',
+    'issue_date',
+    'expiration_date',
+    'notes',
+    'status',
+    'appointment_id',
+    'used_at',
+    'version',
+  ],
   medications: [
     'id',
     'person_id',
@@ -59,6 +75,23 @@ const expectedColumns = {
     'notes',
     'archived',
     'care_group_id',
+    'version',
+  ],
+  prescriptions: [
+    'id',
+    'person_id',
+    'medication_name',
+    'presentation',
+    'dose',
+    'frequency',
+    'duration',
+    'prescribed_by',
+    'issue_date',
+    'expiration_date',
+    'notes',
+    'status',
+    'medication_id',
+    'used_at',
     'version',
   ],
   sessions: [
@@ -95,9 +128,11 @@ const expectedColumns = {
 const expectedIndexes = [
   'idx_appointments_person_date',
   'idx_medications_person_active',
+  'idx_medical_orders_person_status_expiration',
   'idx_memberships_group_user',
   'idx_memberships_user',
   'idx_persons_group_archived_name',
+  'idx_prescriptions_person_status_expiration',
   'idx_sessions_user',
   'idx_tasks_person_status_date',
   'idx_users_username_nocase',
@@ -179,8 +214,16 @@ function inspectSchema() {
     return { kind: 'empty', hasMigrationTable };
 
   const problems = [];
-  if (presentAppTables.length !== appTables.length) {
-    const missing = appTables.filter((name) => !presentTables.has(name));
+  const missing = appTables.filter((name) => !presentTables.has(name));
+  const documentsMissing = documentTables.every((name) =>
+    missing.includes(name),
+  );
+  const onlyDocumentsMissing =
+    documentsMissing && missing.length === documentTables.length;
+  const migrations = hasMigrationTable ? appliedMigrations(true) : [];
+  const documentsMayBePending =
+    onlyDocumentsMissing && !migrations.includes(documentMigration);
+  if (missing.length && !documentsMayBePending) {
     problems.push(`faltan tablas: ${missing.join(', ')}`);
   }
 
@@ -196,8 +239,14 @@ function inspectSchema() {
   const presentIndexes = new Set(
     objects.filter(({ type }) => type === 'index').map(({ name }) => name),
   );
+  const documentIndexes = new Set([
+    'idx_medical_orders_person_status_expiration',
+    'idx_prescriptions_person_status_expiration',
+  ]);
   const missingIndexes = expectedIndexes.filter(
-    (name) => !presentIndexes.has(name),
+    (name) =>
+      !presentIndexes.has(name) &&
+      !(documentsMayBePending && documentIndexes.has(name)),
   );
   if (missingIndexes.length)
     problems.push(`faltan índices: ${missingIndexes.join(', ')}`);
@@ -213,7 +262,13 @@ function inspectSchema() {
 
   return problems.length
     ? { kind: 'incompatible', hasMigrationTable, problems }
-    : { kind: 'legacy-current', hasMigrationTable };
+    : {
+        kind: 'legacy-current',
+        hasMigrationTable,
+        documentSchemaPresent: documentTables.every((name) =>
+          presentTables.has(name),
+        ),
+      };
 }
 
 function appliedMigrations(hasMigrationTable) {
@@ -243,8 +298,11 @@ function printStatus(schema) {
   else console.log('No hay migraciones pendientes.');
 }
 
-function adoptLegacyDatabase() {
-  const values = legacyMigrations
+function adoptLegacyDatabase(schema) {
+  const adopted = schema.documentSchemaPresent
+    ? [...legacyMigrations, documentMigration]
+    : legacyMigrations;
+  const values = adopted
     .map((name) => `('${name.replaceAll("'", "''")}')`)
     .join(',');
   query(`CREATE TABLE d1_migrations (
@@ -281,7 +339,7 @@ function migrate() {
     }
   }
   if (schema.kind === 'legacy-current' && !schema.hasMigrationTable)
-    adoptLegacyDatabase();
+    adoptLegacyDatabase(schema);
 
   wrangler(d1Args('migrations', 'apply'), { inherit: true });
 }
