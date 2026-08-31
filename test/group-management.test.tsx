@@ -9,7 +9,7 @@ const data: GroupData = {
     id: '11111111-1111-4111-8111-111111111111',
     name: 'Familia Pérez',
     role: 'admin',
-    memberCount: 2,
+    memberCount: 1,
     personCount: 1,
   },
   members: [
@@ -17,15 +17,7 @@ const data: GroupData = {
       id: 'u1',
       username: 'ana',
       displayName: 'Ana',
-      userType: 'caregiver',
       role: 'admin',
-    },
-    {
-      id: 'u2',
-      username: 'luis',
-      displayName: 'Luis',
-      userType: 'elder',
-      role: 'member',
     },
   ],
   persons: [{ id: 'p1', name: 'Elena Pérez', archived: false }],
@@ -36,51 +28,67 @@ const props = {
   onCreateUser: vi.fn().mockResolvedValue(undefined),
   onResetPassword: vi.fn().mockResolvedValue(undefined),
   onChangePassword: vi.fn().mockResolvedValue(undefined),
+  onAddPerson: vi.fn(),
+  onManagePeople: vi.fn(),
 };
 
 describe('gestión del grupo familiar', () => {
-  it('muestra integrantes, tipos y personas asociadas', () => {
+  it('separa las personas cuidadas de los cuidadores con acceso', () => {
     render(<GroupView data={data} {...props} />);
     expect(screen.getByText('Ana')).toBeInTheDocument();
-    expect(screen.getByText('Luis')).toBeInTheDocument();
-    expect(screen.getAllByText('Cuidador').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Abuelo').length).toBeGreaterThan(0);
+    expect(screen.getByText('Cuidadores con acceso')).toBeInTheDocument();
+    expect(screen.getByText('Personas cuidadas')).toBeInTheDocument();
+    expect(screen.getByText('Cuidador')).toBeInTheDocument();
     expect(screen.getByText('Elena Pérez')).toBeInTheDocument();
+    expect(screen.queryByText('Abuelo')).not.toBeInTheDocument();
   });
 
-  it('permite al cuidador crear un usuario', async () => {
+  it('permite agregar una persona desde el grupo', async () => {
+    const onAddPerson = vi.fn();
+    render(<GroupView data={data} {...props} onAddPerson={onAddPerson} />);
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Agregar persona' }),
+    );
+
+    expect(onAddPerson).toHaveBeenCalledOnce();
+  });
+
+  it('permite al administrador crear un cuidador sin elegir tipo', async () => {
     const temporaryPassword = `test-${crypto.randomUUID()}`;
     const onCreateUser = vi.fn().mockResolvedValue(undefined);
     render(<GroupView data={data} {...props} onCreateUser={onCreateUser} />);
     await userEvent.type(
-      screen.getByLabelText('Nombre del nuevo integrante'),
+      screen.getByLabelText('Nombre del nuevo cuidador'),
       'Lucre',
     );
     await userEvent.type(
-      screen.getByLabelText('Usuario del nuevo integrante'),
+      screen.getByLabelText('Usuario del nuevo cuidador'),
       'lucre',
     );
     await userEvent.type(
       screen.getByLabelText('Contraseña inicial'),
       temporaryPassword,
     );
-    await userEvent.click(screen.getByRole('button', { name: 'Crear acceso' }));
+    expect(screen.queryByLabelText('Tipo de usuario')).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Agregar cuidador' }),
+    );
     expect(onCreateUser).toHaveBeenCalledWith({
       username: 'lucre',
       displayName: 'Lucre',
-      userType: 'elder',
       password: temporaryPassword,
     });
   });
 
-  it('oculta administración de usuarios a un abuelo', () => {
+  it('oculta la administración de accesos a un cuidador sin rol admin', () => {
     render(
       <GroupView
         data={{ ...data, group: { ...data.group, role: 'member' } }}
         {...props}
       />,
     );
-    expect(screen.queryByText('Crear usuario')).not.toBeInTheDocument();
+    expect(screen.queryByText('Agregar cuidador')).not.toBeInTheDocument();
     expect(
       screen.queryByText('Restablecer contraseña'),
     ).not.toBeInTheDocument();

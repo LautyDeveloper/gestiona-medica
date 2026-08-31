@@ -333,8 +333,8 @@ function OrganizerContent() {
     });
     await loadGroup();
     toast.add({
-      title: 'Usuario creado',
-      description: 'Ya puede iniciar sesión con su nueva cuenta.',
+      title: 'Cuidador agregado',
+      description: 'Ya puede iniciar sesión y administrar el grupo.',
       type: 'success',
     });
   }
@@ -381,7 +381,7 @@ function OrganizerContent() {
           data: payload,
         }),
       });
-      await loadPeople();
+      await Promise.all([loadPeople(), loadGroup()]);
       if (editing.id === activePersonIdRef.current)
         await loadPersonData(editing.id);
       toast.add({
@@ -398,7 +398,7 @@ function OrganizerContent() {
           data: payload,
         }),
       });
-      await loadPeople();
+      await Promise.all([loadPeople(), loadGroup()]);
       await selectPerson(result.id);
       toast.add({
         title: 'Perfil creado',
@@ -628,10 +628,7 @@ function OrganizerContent() {
     );
   const groupCorner = (
     <div className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-2xl border bg-card p-2 shadow-sm">
-      <span className="px-2 text-sm">
-        {groups[0]?.name} ·{' '}
-        {sessionUser?.userType === 'caregiver' ? 'Cuidador' : 'Abuelo'}
-      </span>
+      <span className="px-2 text-sm">{groups[0]?.name} · Cuidador</span>
       <Button
         variant="ghost"
         size="icon"
@@ -736,10 +733,7 @@ function OrganizerContent() {
         <div className="mt-auto grid gap-4">
           <div className="rounded-xl border bg-card p-3 text-xs text-muted-foreground">
             <p className="font-medium text-foreground">{activeGroup.name}</p>
-            <p>
-              {sessionUser?.displayName} ·{' '}
-              {sessionUser?.userType === 'caregiver' ? 'Cuidador' : 'Abuelo'}
-            </p>
+            <p>{sessionUser?.displayName} · Cuidador</p>
           </div>
           <PersonSwitcher
             activePerson={activePerson}
@@ -881,6 +875,8 @@ function OrganizerContent() {
                   onCreateUser={createUser}
                   onResetPassword={resetUserPassword}
                   onChangePassword={changeOwnPassword}
+                  onAddPerson={openAddPerson}
+                  onManagePeople={() => setManagerOpen(true)}
                 />
               )}
             </>

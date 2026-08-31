@@ -79,7 +79,6 @@ function mockApi() {
           id: 'u1',
           username: 'ana',
           displayName: 'Ana',
-          userType: 'caregiver',
         },
         groups: [group],
       });
@@ -147,5 +146,99 @@ describe('organizador multi-persona', () => {
         }),
       ).toBe(true),
     );
+  });
+
+  it('crea una persona desde Grupo familiar y la deja como perfil activo', async () => {
+    const newPersonId = '55555555-5555-4555-8555-555555555555';
+    let currentPeople = [...people];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          input instanceof Request
+            ? input.url
+            : input instanceof URL
+              ? input.href
+              : input;
+        if (url === '/api/session')
+          return Response.json({
+            user: { id: 'u1', username: 'ana', displayName: 'Ana' },
+            groups: [group],
+          });
+        if (url.startsWith('/api/groups?'))
+          return Response.json({
+            group: { ...group, personCount: currentPeople.length },
+            members: [
+              {
+                id: 'u1',
+                username: 'ana',
+                displayName: 'Ana',
+                role: 'admin',
+              },
+            ],
+            persons: currentPeople,
+          });
+        if (url === '/api/person' && init?.method === 'POST') {
+          currentPeople = [
+            ...currentPeople,
+            {
+              id: newPersonId,
+              name: 'María González',
+              birthDate: '1940-05-12',
+              relationship: 'Abuela',
+              notes: '',
+              archived: false,
+              appointmentCount: 0,
+              medicationCount: 0,
+              taskCount: 0,
+            },
+          ];
+          return Response.json({ id: newPersonId }, { status: 201 });
+        }
+        if (url.startsWith('/api/person?'))
+          return Response.json({ persons: currentPeople });
+        if (url.includes(encodeURIComponent(newPersonId)))
+          return Response.json({
+            person: currentPeople.at(-1),
+            appointments: [],
+            medications: [],
+            tasks: [],
+          });
+        return Response.json(anaData);
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    render(<MedicalOrganizer />);
+    expect(await screen.findByText('Hola, Ana')).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getAllByRole('button', { name: 'Grupo familiar' })[0],
+    );
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Agregar persona' }),
+    );
+    await userEvent.type(
+      screen.getByRole('textbox', { name: /Nombre completo/ }),
+      'María González',
+    );
+    await userEvent.type(
+      screen.getByLabelText(/Fecha de nacimiento/),
+      '1940-05-12',
+    );
+    await userEvent.type(
+      screen.getByRole('textbox', { name: /Tu vínculo/ }),
+      'Abuela',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Crear perfil' }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Perfil activo: María González/),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) => input === '/api/person' && init?.method === 'POST',
+      ),
+    ).toBe(true);
   });
 });

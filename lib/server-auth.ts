@@ -77,9 +77,10 @@ export async function requireUser(request: Request): Promise<AppUser> {
   const now = new Date().toISOString();
   const user = await getD1()
     .prepare(
-      `SELECT u.id, u.username, u.display_name AS displayName, u.user_type AS userType
+      `SELECT u.id, u.username, u.display_name AS displayName
        FROM sessions s JOIN users u ON u.id = s.user_id
-       WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?`,
+       WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?
+         AND u.user_type = 'caregiver'`,
     )
     .bind(await hashToken(token), now)
     .first<AppUser>();
@@ -88,13 +89,6 @@ export async function requireUser(request: Request): Promise<AppUser> {
     .prepare('UPDATE users SET last_seen_at = ? WHERE id = ?')
     .bind(now, user.id)
     .run();
-  return user;
-}
-
-export async function requireCaregiver(request: Request) {
-  const user = await requireUser(request);
-  if (user.userType !== 'caregiver')
-    throw new AuthError('Esta acción requiere una cuenta de cuidador', 403);
   return user;
 }
 
@@ -111,10 +105,7 @@ export async function requireMembership(
     .bind(user.id, careGroupId)
     .first<{ role: MembershipRole }>();
   if (!membership) throw new AuthError('No tenés acceso a este grupo', 403);
-  if (
-    role === 'admin' &&
-    (membership.role !== 'admin' || user.userType !== 'caregiver')
-  )
+  if (role === 'admin' && membership.role !== 'admin')
     throw new AuthError('Esta acción requiere permisos de cuidador', 403);
   return { user, role: membership.role };
 }

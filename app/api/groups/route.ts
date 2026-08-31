@@ -19,7 +19,10 @@ export async function GET(request: Request) {
     const [members, persons] = await Promise.all([
       db
         .prepare(
-          `SELECT u.id, u.username, u.display_name AS displayName, u.user_type AS userType, m.role FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.care_group_id = ? ORDER BY CASE u.user_type WHEN 'caregiver' THEN 0 ELSE 1 END, u.display_name`,
+          `SELECT u.id, u.username, u.display_name AS displayName, m.role
+           FROM memberships m JOIN users u ON u.id = m.user_id
+           WHERE m.care_group_id = ? AND u.user_type = 'caregiver'
+           ORDER BY u.display_name COLLATE NOCASE`,
         )
         .bind(id)
         .all<GroupMember>(),

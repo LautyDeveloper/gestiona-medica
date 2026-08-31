@@ -32,7 +32,6 @@ export const careGroupSchema = z.object({
   name: cleanText('El nombre del grupo', 120),
 });
 export const membershipRoleSchema = z.enum(['admin', 'member']);
-export const userTypeSchema = z.enum(['caregiver', 'elder']);
 export const usernameSchema = z
   .string()
   .trim()
@@ -59,7 +58,6 @@ export const createUserSchema = z.object({
   careGroupId: z.uuid(),
   username: usernameSchema,
   displayName: cleanText('El nombre', 120),
-  userType: userTypeSchema,
   password: passwordSchema,
 });
 export const resetPasswordSchema = z.object({

@@ -1,16 +1,23 @@
 'use client';
 
-import { KeyRound, ShieldCheck, UserPlus, UserRound } from 'lucide-react';
+import {
+  HeartHandshake,
+  KeyRound,
+  Plus,
+  Settings2,
+  ShieldCheck,
+  UserPlus,
+  UserRound,
+} from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import type { GroupData, UserType } from '@/lib/models';
+import type { GroupData } from '@/lib/models';
 
 export type NewUserPayload = {
   username: string;
   displayName: string;
-  userType: UserType;
   password: string;
 };
 
@@ -20,6 +27,8 @@ export function GroupView({
   onCreateUser,
   onResetPassword,
   onChangePassword,
+  onAddPerson,
+  onManagePeople,
 }: {
   data: GroupData;
   onRename: (name: string) => Promise<void>;
@@ -29,13 +38,14 @@ export function GroupView({
     currentPassword: string,
     newPassword: string,
   ) => Promise<void>;
+  onAddPerson: () => void;
+  onManagePeople: () => void;
 }) {
   const admin = data.group.role === 'admin';
   const [name, setName] = useState(data.group.name);
   const [newUser, setNewUser] = useState<NewUserPayload>({
     username: '',
     displayName: '',
-    userType: 'elder',
     password: '',
   });
   const [resetUserId, setResetUserId] = useState('');
@@ -68,6 +78,46 @@ export function GroupView({
           {error}
         </p>
       )}
+      <Card className="lg:col-span-2">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <HeartHandshake className="size-5" /> Personas cuidadas
+          </CardTitle>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Cada persona tiene su propio perfil de salud y aparece en el
+            selector de perfil activo.
+          </p>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          {data.persons.length ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {data.persons.map((person) => (
+                <div
+                  key={person.id}
+                  className="flex items-center justify-between rounded-xl border p-3"
+                >
+                  <span className="font-medium">{person.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {person.archived ? 'Archivada' : 'Activa'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+              Todavía no hay personas cuidadas en este grupo.
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={onAddPerson}>
+              <Plus /> Agregar persona
+            </Button>
+            <Button variant="outline" onClick={onManagePeople}>
+              <Settings2 /> Administrar personas
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
       {admin && (
         <Card className="lg:col-span-2">
           <CardHeader>
@@ -91,7 +141,11 @@ export function GroupView({
       )}
       <Card>
         <CardHeader>
-          <CardTitle>Integrantes</CardTitle>
+          <CardTitle>Cuidadores con acceso</CardTitle>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Estas cuentas pueden iniciar sesión y colaborar en la gestión del
+            grupo familiar.
+          </p>
         </CardHeader>
         <CardContent className="grid gap-3">
           {data.members.map((member) => (
@@ -105,7 +159,7 @@ export function GroupView({
                   </p>
                 </div>
                 <span className="rounded-full bg-secondary px-2 py-1 text-xs">
-                  {member.userType === 'caregiver' ? 'Cuidador' : 'Abuelo'}
+                  Cuidador
                 </span>
               </div>
               {admin && (
@@ -158,8 +212,12 @@ export function GroupView({
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <UserPlus className="size-5" /> Crear usuario
+              <UserPlus className="size-5" /> Agregar cuidador
             </CardTitle>
+            <p className="text-sm leading-6 text-muted-foreground">
+              Creá una cuenta para otro cuidador. Tendrá acceso administrativo a
+              este grupo familiar.
+            </p>
           </CardHeader>
           <CardContent>
             <form
@@ -172,14 +230,13 @@ export function GroupView({
                     setNewUser({
                       username: '',
                       displayName: '',
-                      userType: 'elder',
                       password: '',
                     }),
                 );
               }}
             >
               <Input
-                aria-label="Nombre del nuevo integrante"
+                aria-label="Nombre del nuevo cuidador"
                 required
                 maxLength={120}
                 placeholder="Nombre"
@@ -192,7 +249,7 @@ export function GroupView({
                 }
               />
               <Input
-                aria-label="Usuario del nuevo integrante"
+                aria-label="Usuario del nuevo cuidador"
                 required
                 minLength={2}
                 maxLength={40}
@@ -205,20 +262,6 @@ export function GroupView({
                   }))
                 }
               />
-              <select
-                aria-label="Tipo de usuario"
-                className="h-10 rounded-xl border bg-card px-3 text-sm"
-                value={newUser.userType}
-                onChange={(event) =>
-                  setNewUser((value) => ({
-                    ...value,
-                    userType: event.target.value as UserType,
-                  }))
-                }
-              >
-                <option value="elder">Abuelo</option>
-                <option value="caregiver">Cuidador</option>
-              </select>
               <Input
                 aria-label="Contraseña inicial"
                 required
@@ -235,7 +278,7 @@ export function GroupView({
                 }
               />
               <Button type="submit" disabled={busy}>
-                <UserPlus /> Crear acceso
+                <UserPlus /> Agregar cuidador
               </Button>
             </form>
           </CardContent>
@@ -281,24 +324,6 @@ export function GroupView({
           <p className="mt-3 text-xs text-muted-foreground">
             Al cambiarla se cerrarán todas tus sesiones.
           </p>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Personas asociadas</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-2">
-          {data.persons.map((person) => (
-            <div
-              key={person.id}
-              className="flex items-center justify-between rounded-xl border p-3"
-            >
-              <span className="font-medium">{person.name}</span>
-              <span className="text-xs text-muted-foreground">
-                {person.archived ? 'Archivada' : 'Activa'}
-              </span>
-            </div>
-          ))}
         </CardContent>
       </Card>
     </div>

@@ -12,7 +12,10 @@ export async function POST(request: Request) {
     const parsed = createUserSchema.safeParse(await request.json());
     if (!parsed.success)
       return Response.json(
-        { error: 'Revisá los datos ingresados', details: fieldErrors(parsed.error) },
+        {
+          error: 'Revisá los datos ingresados',
+          details: fieldErrors(parsed.error),
+        },
         { status: 400 },
       );
     await requireMembership(request, parsed.data.careGroupId, 'admin');
@@ -39,7 +42,7 @@ export async function POST(request: Request) {
           parsed.data.username,
           parsed.data.displayName,
           await hashPassword(parsed.data.password),
-          parsed.data.userType,
+          'caregiver',
           now,
           now,
         ),
@@ -51,7 +54,7 @@ export async function POST(request: Request) {
           crypto.randomUUID(),
           userId,
           parsed.data.careGroupId,
-          parsed.data.userType === 'caregiver' ? 'admin' : 'member',
+          'admin',
           now,
         ),
     ]);

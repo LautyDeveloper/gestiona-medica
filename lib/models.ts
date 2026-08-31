@@ -6,13 +6,11 @@ export type Section =
   | 'group';
 export type Entity = 'appointment' | 'medication' | 'task';
 export type MembershipRole = 'admin' | 'member';
-export type UserType = 'caregiver' | 'elder';
 
 export interface AppUser {
   id: string;
   username: string;
   displayName: string;
-  userType: UserType;
 }
 export interface CareGroup {
   id: string;
@@ -25,7 +23,6 @@ export interface GroupMember {
   id: string;
   username: string;
   displayName: string;
-  userType: UserType;
   role: MembershipRole;
 }
 export interface SessionData {

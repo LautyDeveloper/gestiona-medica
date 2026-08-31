@@ -21,8 +21,7 @@ export async function getBootstrapStatus(
       `SELECT DISTINCT u.password_hash AS passwordHash
        FROM users u
        JOIN memberships m ON m.user_id = u.id AND m.role = 'admin'
-       JOIN care_groups g ON g.id = m.care_group_id
-       WHERE u.user_type = 'caregiver'`,
+       JOIN care_groups g ON g.id = m.care_group_id`,
     )
     .all<{ passwordHash: string }>();
   const ready = admins.results.some(({ passwordHash }) =>
