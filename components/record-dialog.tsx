@@ -20,13 +20,27 @@ import { Switch } from '@/components/ui/switch';
 import type {
   Appointment,
   Entity,
+  MedicalOrder,
   MedicalTask,
   Medication,
+  Prescription,
 } from '@/lib/models';
 import { ApiError } from '@/lib/client-api';
 import { normalizeAppointmentTime, recordSchemas } from '@/lib/validation';
 
-type RecordValue = Appointment | Medication | MedicalTask;
+type RecordValue =
+  | Appointment
+  | MedicalOrder
+  | Medication
+  | Prescription
+  | MedicalTask;
+
+const today = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Argentina/Buenos_Aires',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+}).format(new Date());
 
 const emptyValues: Record<Entity, Record<string, unknown>> = {
   appointment: {
@@ -39,6 +53,14 @@ const emptyValues: Record<Entity, Record<string, unknown>> = {
     notes: '',
     status: 'Próximo',
   },
+  order: {
+    specialty: '',
+    reason: '',
+    requestedBy: '',
+    issueDate: today,
+    expirationDate: '',
+    notes: '',
+  },
   medication: {
     name: '',
     dose: '',
@@ -46,6 +68,17 @@ const emptyValues: Record<Entity, Record<string, unknown>> = {
     doctor: '',
     notes: '',
     active: true,
+  },
+  prescription: {
+    medicationName: '',
+    presentation: '',
+    dose: '',
+    frequency: '',
+    duration: '',
+    prescribedBy: '',
+    issueDate: today,
+    expirationDate: '',
+    notes: '',
   },
   task: {
     title: '',
@@ -65,10 +98,20 @@ const labels: Record<
     edit: 'Editar turno',
     description: 'Guardá la información práctica del turno.',
   },
+  order: {
+    new: 'Nueva orden médica',
+    edit: 'Editar orden médica',
+    description: 'Registrá la indicación antes de sacar el turno.',
+  },
   medication: {
     new: 'Nuevo medicamento',
     edit: 'Editar medicamento',
     description: 'Registrá qué medicamento toma actualmente.',
+  },
+  prescription: {
+    new: 'Nueva receta',
+    edit: 'Editar receta',
+    description: 'Guardá la indicación y controlá su vencimiento.',
   },
   task: {
     new: 'Nuevo pendiente',
@@ -112,6 +155,7 @@ export function RecordDialog({
   open,
   onOpenChange,
   onSave,
+  initialData,
 }: {
   entity: Entity;
   personId: string;
@@ -123,9 +167,10 @@ export function RecordDialog({
     data: Record<string, unknown>,
     id?: string,
   ) => Promise<void>;
+  initialData?: Record<string, unknown>;
 }) {
   const [form, setForm] = useState<Record<string, unknown>>(() =>
-    value ? { ...value } : { ...emptyValues[entity], personId },
+    value ? { ...value } : { ...emptyValues[entity], ...initialData, personId },
   );
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -263,6 +308,65 @@ export function RecordDialog({
               </Field>
             </>
           )}
+          {entity === 'order' && (
+            <>
+              <Field label="Especialidad" required error={errors.specialty}>
+                <Input
+                  required
+                  value={text('specialty')}
+                  onChange={(e) => update('specialty', e.target.value)}
+                  placeholder="Ej. Cardiología"
+                />
+              </Field>
+              <Field label="Motivo de la orden" required error={errors.reason}>
+                <Textarea
+                  required
+                  value={text('reason')}
+                  onChange={(e) => update('reason', e.target.value)}
+                  placeholder="Ej. Evaluación y control anual"
+                />
+              </Field>
+              <Field
+                label="Médico solicitante"
+                required
+                error={errors.requestedBy}
+              >
+                <Input
+                  required
+                  value={text('requestedBy')}
+                  onChange={(e) => update('requestedBy', e.target.value)}
+                  placeholder="Ej. Dra. Laura Pérez"
+                />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field
+                  label="Fecha de emisión"
+                  required
+                  error={errors.issueDate}
+                >
+                  <Input
+                    required
+                    type="date"
+                    value={text('issueDate')}
+                    onChange={(e) => update('issueDate', e.target.value)}
+                  />
+                </Field>
+                <Field
+                  label="Fecha de vencimiento"
+                  required
+                  error={errors.expirationDate}
+                >
+                  <Input
+                    required
+                    type="date"
+                    min={text('issueDate') || undefined}
+                    value={text('expirationDate')}
+                    onChange={(e) => update('expirationDate', e.target.value)}
+                  />
+                </Field>
+              </div>
+            </>
+          )}
           {entity === 'medication' && (
             <>
               <Field label="Nombre" required error={errors.name}>
@@ -310,6 +414,97 @@ export function RecordDialog({
                   checked={Boolean(form.active)}
                   onCheckedChange={(checked) => update('active', checked)}
                 />
+              </div>
+            </>
+          )}
+          {entity === 'prescription' && (
+            <>
+              <Field label="Medicamento" required error={errors.medicationName}>
+                <Input
+                  required
+                  value={text('medicationName')}
+                  onChange={(e) => update('medicationName', e.target.value)}
+                  placeholder="Ej. Losartán"
+                />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field
+                  label="Presentación"
+                  required
+                  error={errors.presentation}
+                >
+                  <Input
+                    required
+                    value={text('presentation')}
+                    onChange={(e) => update('presentation', e.target.value)}
+                    placeholder="Ej. Comprimidos de 50 mg"
+                  />
+                </Field>
+                <Field label="Dosis" required error={errors.dose}>
+                  <Input
+                    required
+                    value={text('dose')}
+                    onChange={(e) => update('dose', e.target.value)}
+                    placeholder="Ej. 50 mg"
+                  />
+                </Field>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Frecuencia" required error={errors.frequency}>
+                  <Input
+                    required
+                    value={text('frequency')}
+                    onChange={(e) => update('frequency', e.target.value)}
+                    placeholder="Ej. Una vez por día"
+                  />
+                </Field>
+                <Field label="Duración" required error={errors.duration}>
+                  <Input
+                    required
+                    value={text('duration')}
+                    onChange={(e) => update('duration', e.target.value)}
+                    placeholder="Ej. 30 días"
+                  />
+                </Field>
+              </div>
+              <Field
+                label="Médico prescriptor"
+                required
+                error={errors.prescribedBy}
+              >
+                <Input
+                  required
+                  value={text('prescribedBy')}
+                  onChange={(e) => update('prescribedBy', e.target.value)}
+                  placeholder="Ej. Dr. Gómez"
+                />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field
+                  label="Fecha de emisión"
+                  required
+                  error={errors.issueDate}
+                >
+                  <Input
+                    required
+                    type="date"
+                    value={text('issueDate')}
+                    onChange={(e) => update('issueDate', e.target.value)}
+                  />
+                </Field>
+                <Field
+                  label="Fecha de vencimiento"
+                  required
+                  error={errors.expirationDate}
+                >
+                  <Input
+                    required
+                    type="date"
+                    min={text('issueDate') || undefined}
+                    value={text('expirationDate')}
+                    onChange={(e) => update('expirationDate', e.target.value)}
+                  />
+                </Field>
               </div>
             </>
           )}

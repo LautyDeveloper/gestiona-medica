@@ -1,44 +1,60 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getD1 } from '@/db';
 import type {
   AppData,
   Appointment,
   Entity,
+  MedicalOrder,
   MedicalTask,
   Medication,
   Person,
+  Prescription,
 } from '@/lib/models';
 import { entitySchema, fieldErrors, recordSchemas } from '@/lib/validation';
 import { authError, requireMembership } from '@/lib/server-auth';
 
 const tables: Record<Entity, string> = {
   appointment: 'appointments',
+  order: 'medical_orders',
   medication: 'medications',
+  prescription: 'prescriptions',
   task: 'tasks',
 };
 
 function apiError(message: string, status: number, details?: unknown) {
-  return NextResponse.json({ error: message, details }, { status });
+  return Response.json({ error: message, details }, { status });
 }
 
-async function activePerson(personId: unknown, careGroupId: string) {
+type ActivePersonResult =
+  | { ok: false; error: Response }
+  | { ok: true; person: Person };
+
+async function activePerson(
+  personId: unknown,
+  careGroupId: string,
+): Promise<ActivePersonResult> {
   const id = z.uuid().safeParse(personId);
   if (!id.success)
-    return { error: apiError('Identificador de persona inválido', 400) };
+    return {
+      ok: false,
+      error: apiError('Identificador de persona inválido', 400),
+    };
   const raw = await getD1()
     .prepare(
       'SELECT id, care_group_id AS careGroupId, name, birth_date AS birthDate, relationship, notes, archived, version FROM persons WHERE id = ? AND care_group_id = ?',
     )
     .bind(id.data, careGroupId)
     .first<Omit<Person, 'archived'> & { archived: number }>();
-  if (!raw) return { error: apiError('La persona no existe', 404) };
+  if (!raw) return { ok: false, error: apiError('La persona no existe', 404) };
   if (raw.archived)
-    return { error: apiError('La persona está archivada', 409) };
-  return { person: { ...raw, archived: false } satisfies Person };
+    return { ok: false, error: apiError('La persona está archivada', 409) };
+  return {
+    ok: true,
+    person: { ...raw, archived: false } satisfies Person,
+  };
 }
 
-export async function GET(request: Request) {
+export async function GET(request: Request): Promise<Response> {
   try {
     const careGroupId =
       new URL(request.url).searchParams.get('careGroupId') || '';
@@ -47,36 +63,51 @@ export async function GET(request: Request) {
       new URL(request.url).searchParams.get('personId'),
       careGroupId,
     );
-    if ('error' in personResult) return personResult.error;
+    if (!personResult.ok) return personResult.error;
     const person = personResult.person;
     const db = getD1();
-    const [appointments, medications, tasks] = await Promise.all([
-      db
-        .prepare(
-          'SELECT id, person_id AS personId, specialty, doctor, date, time, place, bring, notes, status, version FROM appointments WHERE person_id = ? ORDER BY date, time',
-        )
-        .bind(person.id)
-        .all<Appointment>(),
-      db
-        .prepare(
-          'SELECT id, person_id AS personId, name, dose, frequency, doctor, notes, active, version FROM medications WHERE person_id = ? ORDER BY active DESC, name',
-        )
-        .bind(person.id)
-        .all<Omit<Medication, 'active'> & { active: number }>(),
-      db
-        .prepare(
-          "SELECT id, person_id AS personId, title, due_date AS dueDate, priority, status, notes, version FROM tasks WHERE person_id = ? ORDER BY CASE status WHEN 'Pendiente' THEN 0 ELSE 1 END, CASE WHEN due_date = '' THEN 1 ELSE 0 END, due_date",
-        )
-        .bind(person.id)
-        .all<MedicalTask>(),
-    ]);
-    return NextResponse.json({
+    const [appointments, orders, medications, prescriptions, tasks] =
+      await Promise.all([
+        db
+          .prepare(
+            'SELECT id, person_id AS personId, specialty, doctor, date, time, place, bring, notes, status, version FROM appointments WHERE person_id = ? ORDER BY date, time',
+          )
+          .bind(person.id)
+          .all<Appointment>(),
+        db
+          .prepare(
+            "SELECT id, person_id AS personId, specialty, reason, requested_by AS requestedBy, issue_date AS issueDate, expiration_date AS expirationDate, notes, status, appointment_id AS appointmentId, used_at AS usedAt, version FROM medical_orders WHERE person_id = ? ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, expiration_date, issue_date",
+          )
+          .bind(person.id)
+          .all<MedicalOrder>(),
+        db
+          .prepare(
+            'SELECT id, person_id AS personId, name, dose, frequency, doctor, notes, active, version FROM medications WHERE person_id = ? ORDER BY active DESC, name',
+          )
+          .bind(person.id)
+          .all<Omit<Medication, 'active'> & { active: number }>(),
+        db
+          .prepare(
+            "SELECT id, person_id AS personId, medication_name AS medicationName, presentation, dose, frequency, duration, prescribed_by AS prescribedBy, issue_date AS issueDate, expiration_date AS expirationDate, notes, status, medication_id AS medicationId, used_at AS usedAt, version FROM prescriptions WHERE person_id = ? ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, expiration_date, issue_date",
+          )
+          .bind(person.id)
+          .all<Prescription>(),
+        db
+          .prepare(
+            "SELECT id, person_id AS personId, title, due_date AS dueDate, priority, status, notes, version FROM tasks WHERE person_id = ? ORDER BY CASE status WHEN 'Pendiente' THEN 0 ELSE 1 END, CASE WHEN due_date = '' THEN 1 ELSE 0 END, due_date",
+          )
+          .bind(person.id)
+          .all<MedicalTask>(),
+      ]);
+    return Response.json({
       person,
       appointments: appointments.results,
+      orders: orders.results,
       medications: medications.results.map((item) => ({
         ...item,
         active: Boolean(item.active),
       })),
+      prescriptions: prescriptions.results,
       tasks: tasks.results,
     } satisfies AppData);
   } catch (caught) {
@@ -86,7 +117,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: Request): Promise<Response> {
   try {
     const body = (await request.json()) as {
       entity?: unknown;
@@ -101,7 +132,7 @@ export async function POST(request: Request) {
       body.personId,
       body.careGroupId || '',
     );
-    if ('error' in personResult) return personResult.error;
+    if (!personResult.ok) return personResult.error;
     const entity = entityResult.data;
     const parsed = recordSchemas[entity].safeParse(body.data);
     if (!parsed.success)
@@ -134,6 +165,27 @@ export async function POST(request: Request) {
         )
         .run();
       changes = result.meta.changes;
+    } else if (entity === 'order') {
+      const item = data as Omit<
+        MedicalOrder,
+        'id' | 'personId' | 'status' | 'appointmentId' | 'usedAt'
+      >;
+      const result = await db
+        .prepare(
+          "INSERT INTO medical_orders (id, person_id, specialty, reason, requested_by, issue_date, expiration_date, notes, status, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 1)",
+        )
+        .bind(
+          id,
+          personResult.person.id,
+          item.specialty,
+          item.reason,
+          item.requestedBy,
+          item.issueDate,
+          item.expirationDate,
+          item.notes,
+        )
+        .run();
+      changes = result.meta.changes;
     } else if (entity === 'medication') {
       const item = data as Omit<Medication, 'id' | 'personId'>;
       const result = await db
@@ -149,6 +201,30 @@ export async function POST(request: Request) {
           item.doctor,
           item.notes,
           item.active ? 1 : 0,
+        )
+        .run();
+      changes = result.meta.changes;
+    } else if (entity === 'prescription') {
+      const item = data as Omit<
+        Prescription,
+        'id' | 'personId' | 'status' | 'medicationId' | 'usedAt'
+      >;
+      const result = await db
+        .prepare(
+          "INSERT INTO prescriptions (id, person_id, medication_name, presentation, dose, frequency, duration, prescribed_by, issue_date, expiration_date, notes, status, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 1)",
+        )
+        .bind(
+          id,
+          personResult.person.id,
+          item.medicationName,
+          item.presentation,
+          item.dose,
+          item.frequency,
+          item.duration,
+          item.prescribedBy,
+          item.issueDate,
+          item.expirationDate,
+          item.notes,
         )
         .run();
       changes = result.meta.changes;
@@ -175,7 +251,7 @@ export async function POST(request: Request) {
         'Este registro cambió en otro dispositivo. Recargá e intentá nuevamente.',
         409,
       );
-    return NextResponse.json({ id }, { status: 201 });
+    return Response.json({ id }, { status: 201 });
   } catch (caught) {
     return caught instanceof Error && 'status' in caught
       ? authError(caught)
@@ -183,7 +259,7 @@ export async function POST(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: Request): Promise<Response> {
   try {
     const body = (await request.json()) as {
       entity?: unknown;
@@ -201,7 +277,7 @@ export async function PATCH(request: Request) {
       body.personId,
       body.careGroupId || '',
     );
-    if ('error' in personResult) return personResult.error;
+    if (!personResult.ok) return personResult.error;
     const entity = entityResult.data;
     const parsed = recordSchemas[entity].safeParse(body.data);
     if (!parsed.success)
@@ -247,6 +323,28 @@ export async function PATCH(request: Request) {
         )
         .run();
       changes = result.meta.changes;
+    } else if (entity === 'order') {
+      const item = data as Omit<
+        MedicalOrder,
+        'id' | 'personId' | 'status' | 'appointmentId' | 'usedAt'
+      >;
+      const result = await db
+        .prepare(
+          'UPDATE medical_orders SET specialty = ?, reason = ?, requested_by = ?, issue_date = ?, expiration_date = ?, notes = ?, version = version + 1 WHERE id = ? AND person_id = ? AND version = ?',
+        )
+        .bind(
+          item.specialty,
+          item.reason,
+          item.requestedBy,
+          item.issueDate,
+          item.expirationDate,
+          item.notes,
+          idResult.data,
+          personResult.person.id,
+          version.data,
+        )
+        .run();
+      changes = result.meta.changes;
     } else if (entity === 'medication') {
       const item = data as Omit<Medication, 'id' | 'personId'>;
       const result = await db
@@ -260,6 +358,31 @@ export async function PATCH(request: Request) {
           item.doctor,
           item.notes,
           item.active ? 1 : 0,
+          idResult.data,
+          personResult.person.id,
+          version.data,
+        )
+        .run();
+      changes = result.meta.changes;
+    } else if (entity === 'prescription') {
+      const item = data as Omit<
+        Prescription,
+        'id' | 'personId' | 'status' | 'medicationId' | 'usedAt'
+      >;
+      const result = await db
+        .prepare(
+          'UPDATE prescriptions SET medication_name = ?, presentation = ?, dose = ?, frequency = ?, duration = ?, prescribed_by = ?, issue_date = ?, expiration_date = ?, notes = ?, version = version + 1 WHERE id = ? AND person_id = ? AND version = ?',
+        )
+        .bind(
+          item.medicationName,
+          item.presentation,
+          item.dose,
+          item.frequency,
+          item.duration,
+          item.prescribedBy,
+          item.issueDate,
+          item.expirationDate,
+          item.notes,
           idResult.data,
           personResult.person.id,
           version.data,
@@ -290,7 +413,7 @@ export async function PATCH(request: Request) {
         'Este registro cambió en otro dispositivo. Recargá e intentá nuevamente.',
         409,
       );
-    return NextResponse.json({ ok: true });
+    return Response.json({ ok: true });
   } catch (caught) {
     return caught instanceof Error && 'status' in caught
       ? authError(caught)
@@ -298,7 +421,7 @@ export async function PATCH(request: Request) {
   }
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: Request): Promise<Response> {
   try {
     const url = new URL(request.url);
     const entityResult = entitySchema.safeParse(url.searchParams.get('entity'));
@@ -311,7 +434,7 @@ export async function DELETE(request: Request) {
       url.searchParams.get('personId'),
       careGroupId,
     );
-    if ('error' in personResult) return personResult.error;
+    if (!personResult.ok) return personResult.error;
     const result = await getD1()
       .prepare(
         `DELETE FROM ${tables[entityResult.data]} WHERE id = ? AND person_id = ?`,
@@ -320,7 +443,7 @@ export async function DELETE(request: Request) {
       .run();
     if (!result.meta.changes)
       return apiError('El registro no existe para esta persona', 404);
-    return NextResponse.json({ ok: true });
+    return Response.json({ ok: true });
   } catch (caught) {
     return caught instanceof Error && 'status' in caught
       ? authError(caught)

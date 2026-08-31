@@ -17,7 +17,9 @@ const people: PersonSummary[] = [
   {
     ...activePerson,
     appointmentCount: 0,
+    orderCount: 0,
     medicationCount: 0,
+    prescriptionCount: 0,
     taskCount: 0,
   },
   {
@@ -28,7 +30,9 @@ const people: PersonSummary[] = [
     notes: '',
     archived: false,
     appointmentCount: 0,
+    orderCount: 0,
     medicationCount: 0,
+    prescriptionCount: 0,
     taskCount: 0,
   },
 ];

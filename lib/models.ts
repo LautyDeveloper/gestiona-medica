@@ -1,10 +1,17 @@
 export type Section =
   | 'home'
   | 'appointments'
+  | 'orders'
   | 'medications'
+  | 'prescriptions'
   | 'tasks'
   | 'group';
-export type Entity = 'appointment' | 'medication' | 'task';
+export type Entity =
+  | 'appointment'
+  | 'order'
+  | 'medication'
+  | 'prescription'
+  | 'task';
 export type MembershipRole = 'admin' | 'member';
 
 export interface AppUser {
@@ -48,7 +55,9 @@ export interface Person {
 
 export interface PersonSummary extends Person {
   appointmentCount: number;
+  orderCount: number;
   medicationCount: number;
+  prescriptionCount: number;
   taskCount: number;
 }
 export interface Appointment {
@@ -75,6 +84,38 @@ export interface Medication {
   active: boolean;
   version?: number;
 }
+export type DocumentStatus = 'pending' | 'used';
+export interface MedicalOrder {
+  id: string;
+  personId: string;
+  specialty: string;
+  reason: string;
+  requestedBy: string;
+  issueDate: string;
+  expirationDate: string;
+  notes: string;
+  status: DocumentStatus;
+  appointmentId: string | null;
+  usedAt: string | null;
+  version?: number;
+}
+export interface Prescription {
+  id: string;
+  personId: string;
+  medicationName: string;
+  presentation: string;
+  dose: string;
+  frequency: string;
+  duration: string;
+  prescribedBy: string;
+  issueDate: string;
+  expirationDate: string;
+  notes: string;
+  status: DocumentStatus;
+  medicationId: string | null;
+  usedAt: string | null;
+  version?: number;
+}
 export interface MedicalTask {
   id: string;
   personId: string;
@@ -88,7 +129,9 @@ export interface MedicalTask {
 export interface AppData {
   person: Person | null;
   appointments: Appointment[];
+  orders: MedicalOrder[];
   medications: Medication[];
+  prescriptions: Prescription[];
   tasks: MedicalTask[];
 }
 
@@ -106,11 +149,13 @@ export interface BackupDataV1 {
 }
 
 export interface BackupData {
-  schemaVersion: 3;
+  schemaVersion: 4;
   exportedAt: string;
   careGroup: { name: string };
   persons: Omit<Person, 'careGroupId' | 'version'>[];
   appointments: Omit<Appointment, 'version'>[];
+  orders: Omit<MedicalOrder, 'version'>[];
   medications: Omit<Medication, 'version'>[];
+  prescriptions: Omit<Prescription, 'version'>[];
   tasks: Omit<MedicalTask, 'version'>[];
 }

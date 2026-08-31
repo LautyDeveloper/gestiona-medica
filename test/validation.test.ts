@@ -4,7 +4,9 @@ import {
   backupImportSchema,
   backupSchema,
   medicationSchema,
+  orderSchema,
   personSchema,
+  prescriptionSchema,
   taskSchema,
 } from '@/lib/validation';
 
@@ -92,6 +94,40 @@ describe('validaciones', () => {
       }).success,
     ).toBe(true);
   });
+  it('valida órdenes y recetas con vencimiento posterior a la emisión', () => {
+    const dates = { issueDate: '2026-08-01', expirationDate: '2026-09-01' };
+    expect(
+      orderSchema.safeParse({
+        specialty: 'Cardiología',
+        reason: 'Control',
+        requestedBy: 'Dra. Pérez',
+        notes: '',
+        ...dates,
+      }).success,
+    ).toBe(true);
+    expect(
+      prescriptionSchema.safeParse({
+        medicationName: 'Losartán',
+        presentation: 'Comprimidos de 50 mg',
+        dose: '50 mg',
+        frequency: 'Una vez por día',
+        duration: '30 días',
+        prescribedBy: 'Dra. Pérez',
+        notes: '',
+        ...dates,
+      }).success,
+    ).toBe(true);
+    expect(
+      orderSchema.safeParse({
+        specialty: 'Cardiología',
+        reason: 'Control',
+        requestedBy: 'Dra. Pérez',
+        notes: '',
+        issueDate: '2026-09-01',
+        expirationDate: '2026-08-01',
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe('respaldo multi-persona', () => {
@@ -135,7 +171,7 @@ describe('respaldo multi-persona', () => {
 
   it('acepta una copia íntegra con perfiles activos y archivados', () =>
     expect(backupSchema.safeParse(valid).success).toBe(true));
-  it('convierte respaldos de Sprint 1 a versión 3', () => {
+  it('convierte respaldos de Sprint 1 a versión 4', () => {
     const legacy = {
       schemaVersion: 1,
       exportedAt: valid.exportedAt,
@@ -151,8 +187,10 @@ describe('respaldo multi-persona', () => {
       tasks: [],
     };
     const parsed = backupImportSchema.parse(legacy);
-    expect(parsed.schemaVersion).toBe(3);
+    expect(parsed.schemaVersion).toBe(4);
     expect(parsed.persons).toEqual([{ ...legacy.person, archived: false }]);
+    expect(parsed.orders).toEqual([]);
+    expect(parsed.prescriptions).toEqual([]);
   });
   it('rechaza versiones desconocidas', () =>
     expect(
@@ -210,4 +248,28 @@ describe('respaldo multi-persona', () => {
         ],
       }).success,
     ).toBe(false));
+  it('acepta respaldo versión 4 con documentos vinculados', () =>
+    expect(
+      backupImportSchema.safeParse({
+        ...valid,
+        schemaVersion: 4,
+        careGroup: { name: 'Familia Pérez' },
+        orders: [
+          {
+            id: '55555555-5555-4555-8555-555555555555',
+            personId,
+            specialty: 'Clínica',
+            reason: 'Control',
+            requestedBy: 'Dra. Pérez',
+            issueDate: '2026-08-01',
+            expirationDate: '2026-09-01',
+            notes: '',
+            status: 'used',
+            appointmentId: recordId,
+            usedAt: '2026-08-15T12:00:00.000Z',
+          },
+        ],
+        prescriptions: [],
+      }).success,
+    ).toBe(true));
 });

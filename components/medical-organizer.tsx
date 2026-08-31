@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   CalendarDays,
   ClipboardCheck,
+  ClipboardPlus,
+  Ellipsis,
+  FileText,
   Home,
   Moon,
   Pill,
@@ -19,6 +22,8 @@ import {
   AppointmentsView,
   HomeView,
   MedicationsView,
+  OrdersView,
+  PrescriptionsView,
   TasksView,
 } from '@/components/app-views';
 import {
@@ -36,6 +41,14 @@ import {
 import { PersonSwitcher } from '@/components/person-switcher';
 import { GroupView, type NewUserPayload } from '@/components/group-management';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -51,11 +64,13 @@ import type {
   AppData,
   Appointment,
   Entity,
+  MedicalOrder,
   MedicalTask,
   Medication,
   PeopleData,
   Person,
   PersonSummary,
+  Prescription,
   Section,
   CareGroup,
   GroupData,
@@ -68,7 +83,9 @@ const ACTIVE_PERSON_KEY = 'activePersonId';
 const navItems: { id: Section; label: string; icon: typeof Home }[] = [
   { id: 'home', label: 'Inicio', icon: Home },
   { id: 'appointments', label: 'Turnos', icon: CalendarDays },
+  { id: 'orders', label: 'Órdenes', icon: ClipboardPlus },
   { id: 'medications', label: 'Medicamentos', icon: Pill },
+  { id: 'prescriptions', label: 'Recetas', icon: FileText },
   { id: 'tasks', label: 'Pendientes', icon: ClipboardCheck },
   { id: 'group', label: 'Grupo familiar', icon: Users },
 ];
@@ -83,11 +100,23 @@ const headers: Record<
     action: 'Nuevo turno',
     entity: 'appointment',
   },
+  orders: {
+    title: 'Órdenes',
+    eyebrow: 'Indicaciones para sacar turno',
+    action: 'Nueva orden',
+    entity: 'order',
+  },
   medications: {
     title: 'Medicamentos',
     eyebrow: 'Tratamiento actual',
     action: 'Nuevo medicamento',
     entity: 'medication',
+  },
+  prescriptions: {
+    title: 'Recetas',
+    eyebrow: 'Indicaciones de medicamentos',
+    action: 'Nueva receta',
+    entity: 'prescription',
   },
   tasks: {
     title: 'Pendientes',
@@ -98,7 +127,15 @@ const headers: Record<
   group: { title: 'Grupo familiar', eyebrow: 'Espacio compartido' },
 };
 
-type RecordValue = Appointment | Medication | MedicalTask;
+type RecordValue =
+  | Appointment
+  | MedicalOrder
+  | Medication
+  | Prescription
+  | MedicalTask;
+type ConversionSource =
+  | { entity: 'order'; item: MedicalOrder }
+  | { entity: 'prescription'; item: Prescription };
 type DeleteTarget = {
   entity: Entity;
   id: string;
@@ -128,6 +165,10 @@ function OrganizerContent() {
     entity: Entity;
     value: RecordValue | null;
   }>({ open: false, entity: 'appointment', value: null });
+  const [conversion, setConversion] = useState<{
+    source: ConversionSource;
+    initialData: Record<string, unknown>;
+  } | null>(null);
   const [personDialog, setPersonDialog] = useState<{
     open: boolean;
     person: Person | null;
@@ -290,16 +331,35 @@ function OrganizerContent() {
     window.localStorage.setItem('theme', next ? 'dark' : 'light');
   }
   function openNew(entity: Entity) {
+    setConversion(null);
     setDialog({ open: true, entity, value: null });
   }
-  function openEdit(value: RecordValue) {
-    const entity: Entity =
-      'specialty' in value
-        ? 'appointment'
-        : 'active' in value
-          ? 'medication'
-          : 'task';
+  function openEdit(entity: Entity, value: RecordValue) {
+    setConversion(null);
     setDialog({ open: true, entity, value });
+  }
+  function openConversion(source: ConversionSource) {
+    const initialData =
+      source.entity === 'order'
+        ? {
+            specialty: source.item.specialty,
+            bring: 'Orden médica',
+            notes: `Orden solicitada por ${source.item.requestedBy}: ${source.item.reason}`,
+          }
+        : {
+            name: source.item.medicationName,
+            dose: source.item.dose,
+            frequency: source.item.frequency,
+            doctor: source.item.prescribedBy,
+            notes: `Presentación: ${source.item.presentation}. Duración indicada: ${source.item.duration}.${source.item.notes ? ` ${source.item.notes}` : ''}`,
+            active: true,
+          };
+    setConversion({ source, initialData });
+    setDialog({
+      open: true,
+      entity: source.entity === 'order' ? 'appointment' : 'medication',
+      value: null,
+    });
   }
   function openAddPerson() {
     setManagerOpen(false);
@@ -484,6 +544,40 @@ function OrganizerContent() {
     });
   }
 
+  async function convertDocument(
+    _entity: Entity,
+    payload: Record<string, unknown>,
+  ) {
+    if (!conversion) throw new ApiError('No hay un documento para convertir');
+    const personId = activePersonIdRef.current;
+    if (!personId) throw new ApiError('No hay una persona activa');
+    await requestJson('/api/data/convert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceEntity: conversion.source.entity,
+        sourceId: conversion.source.item.id,
+        personId,
+        careGroupId: activeGroupIdRef.current,
+        version: conversion.source.item.version,
+        data: payload,
+      }),
+    });
+    await Promise.all([loadPersonData(personId), loadPeople()]);
+    toast.add({
+      title:
+        conversion.source.entity === 'order'
+          ? 'Turno creado'
+          : 'Medicamento agregado',
+      description:
+        conversion.source.entity === 'order'
+          ? 'La orden quedó vinculada al nuevo turno.'
+          : 'La receta quedó vinculada al tratamiento.',
+      type: 'success',
+    });
+    setConversion(null);
+  }
+
   async function update(
     entity: Entity,
     item: RecordValue,
@@ -507,11 +601,15 @@ function OrganizerContent() {
 
   function requestDelete(entity: Entity, item: RecordValue) {
     const label =
-      'specialty' in item
-        ? `el turno de ${item.specialty}`
-        : 'active' in item
-          ? item.name
-          : item.title;
+      'reason' in item
+        ? `la orden de ${item.specialty}`
+        : 'specialty' in item
+          ? `el turno de ${item.specialty}`
+          : 'medicationName' in item
+            ? `la receta de ${item.medicationName}`
+            : 'active' in item
+              ? item.name
+              : item.title;
     setDeleteTarget({ entity, id: item.id, personId: item.personId, label });
   }
 
@@ -824,7 +922,7 @@ function OrganizerContent() {
                 <AppointmentsView
                   items={data.appointments}
                   onNew={() => openNew('appointment')}
-                  onEdit={openEdit}
+                  onEdit={(item) => openEdit('appointment', item)}
                   onComplete={(item) =>
                     void update('appointment', item, { status: 'Realizado' })
                   }
@@ -836,11 +934,25 @@ function OrganizerContent() {
                   }}
                 />
               )}{' '}
+              {section === 'orders' && (
+                <OrdersView
+                  items={data.orders}
+                  onNew={() => openNew('order')}
+                  onEdit={(item) => openEdit('order', item)}
+                  onConvert={(item) =>
+                    openConversion({ entity: 'order', item })
+                  }
+                  onDelete={(id) => {
+                    const item = data.orders.find((value) => value.id === id);
+                    if (item) requestDelete('order', item);
+                  }}
+                />
+              )}{' '}
               {section === 'medications' && (
                 <MedicationsView
                   items={data.medications}
                   onNew={() => openNew('medication')}
-                  onEdit={openEdit}
+                  onEdit={(item) => openEdit('medication', item)}
                   onDelete={(id) => {
                     const item = data.medications.find(
                       (value) => value.id === id,
@@ -849,11 +961,27 @@ function OrganizerContent() {
                   }}
                 />
               )}{' '}
+              {section === 'prescriptions' && (
+                <PrescriptionsView
+                  items={data.prescriptions}
+                  onNew={() => openNew('prescription')}
+                  onEdit={(item) => openEdit('prescription', item)}
+                  onConvert={(item) =>
+                    openConversion({ entity: 'prescription', item })
+                  }
+                  onDelete={(id) => {
+                    const item = data.prescriptions.find(
+                      (value) => value.id === id,
+                    );
+                    if (item) requestDelete('prescription', item);
+                  }}
+                />
+              )}{' '}
               {section === 'tasks' && (
                 <TasksView
                   items={data.tasks}
                   onNew={() => openNew('task')}
-                  onEdit={openEdit}
+                  onEdit={(item) => openEdit('task', item)}
                   onComplete={(item) =>
                     void update('task', item, {
                       status:
@@ -884,28 +1012,63 @@ function OrganizerContent() {
         </div>
       </main>
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 grid h-[76px] grid-cols-5 border-t bg-card/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 grid h-[76px] grid-cols-4 border-t bg-card/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
         aria-label="Navegación principal móvil"
       >
-        {navItems.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setSection(id)}
-            className={`flex flex-col items-center justify-center gap-1 text-[11px] font-medium ${section === id ? 'text-primary' : 'text-muted-foreground'}`}
+        {navItems
+          .filter(({ id }) =>
+            (['home', 'appointments', 'medications'] as Section[]).includes(id),
+          )
+          .map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setSection(id)}
+              className={`flex flex-col items-center justify-center gap-1 text-[11px] font-medium ${section === id ? 'text-primary' : 'text-muted-foreground'}`}
+            >
+              <Icon
+                className="size-5"
+                strokeWidth={section === id ? 2.2 : 1.8}
+              />
+              {label}
+            </button>
+          ))}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className={`flex flex-col items-center justify-center gap-1 text-[11px] font-medium ${['orders', 'prescriptions', 'tasks', 'group'].includes(section) ? 'text-primary' : 'text-muted-foreground'}`}
           >
-            <Icon className="size-5" strokeWidth={section === id ? 2.2 : 1.8} />
-            {label}
-          </button>
-        ))}
+            <Ellipsis className="size-5" />
+            Más
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" side="top" className="mb-2 w-56">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Más secciones</DropdownMenuLabel>
+              {navItems
+                .filter(({ id }) =>
+                  (
+                    ['orders', 'prescriptions', 'tasks', 'group'] as Section[]
+                  ).includes(id),
+                )
+                .map(({ id, label, icon: Icon }) => (
+                  <DropdownMenuItem key={id} onClick={() => setSection(id)}>
+                    <Icon /> {label}
+                  </DropdownMenuItem>
+                ))}
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </nav>
       <RecordDialog
-        key={`${dialog.entity}-${dialog.value?.id || 'new'}-${dialog.open}-${activePerson.id}`}
+        key={`${dialog.entity}-${dialog.value?.id || conversion?.source.item.id || 'new'}-${dialog.open}-${activePerson.id}`}
         entity={dialog.entity}
         personId={activePerson.id}
         value={dialog.value}
         open={dialog.open}
-        onOpenChange={(open) => setDialog((current) => ({ ...current, open }))}
-        onSave={save}
+        onOpenChange={(open) => {
+          setDialog((current) => ({ ...current, open }));
+          if (!open) setConversion(null);
+        }}
+        onSave={conversion ? convertDocument : save}
+        initialData={conversion?.initialData}
       />
       <PersonDialog
         key={`${personDialog.person?.id || 'new'}-${personDialog.open}`}
@@ -987,7 +1150,11 @@ function ArchiveDialog({
   onConfirm: () => void;
 }) {
   const total = person
-    ? person.appointmentCount + person.medicationCount + person.taskCount
+    ? person.appointmentCount +
+      person.orderCount +
+      person.medicationCount +
+      person.prescriptionCount +
+      person.taskCount
     : 0;
   return (
     <AlertDialog
@@ -1001,7 +1168,7 @@ function ArchiveDialog({
           <AlertDialogTitle>¿Archivar a {person?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {total > 0
-              ? `Tiene ${person?.appointmentCount} turnos, ${person?.medicationCount} medicamentos y ${person?.taskCount} pendientes. Se ocultará del selector, pero toda la información quedará conservada.`
+              ? `Tiene ${total} ${total === 1 ? 'registro' : 'registros'} entre turnos, órdenes, medicamentos, recetas y pendientes. Se ocultará del selector, pero toda la información quedará conservada.`
               : 'Se ocultará del selector y podrás restaurar el perfil cuando quieras.'}
           </AlertDialogDescription>
         </AlertDialogHeader>

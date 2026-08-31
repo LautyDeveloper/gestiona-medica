@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MedicalOrganizer } from '@/components/medical-organizer';
@@ -24,7 +24,9 @@ const people: PersonSummary[] = [
     notes: '',
     archived: false,
     appointmentCount: 1,
+    orderCount: 0,
     medicationCount: 0,
+    prescriptionCount: 0,
     taskCount: 0,
   },
   {
@@ -35,7 +37,9 @@ const people: PersonSummary[] = [
     notes: '',
     archived: false,
     appointmentCount: 0,
+    orderCount: 0,
     medicationCount: 0,
+    prescriptionCount: 0,
     taskCount: 0,
   },
 ];
@@ -55,13 +59,17 @@ const anaData: AppData = {
       status: 'Próximo',
     },
   ],
+  orders: [],
   medications: [],
+  prescriptions: [],
   tasks: [],
 };
 const luisData: AppData = {
   person: people[1],
   appointments: [],
+  orders: [],
   medications: [],
+  prescriptions: [],
   tasks: [],
 };
 
@@ -148,6 +156,22 @@ describe('organizador multi-persona', () => {
     );
   });
 
+  it('abre Órdenes desde el menú Más en la navegación móvil', async () => {
+    vi.stubGlobal('fetch', mockApi());
+    render(<MedicalOrganizer />);
+    expect(await screen.findByText('Hola, Ana')).toBeInTheDocument();
+
+    const more = screen.getByRole('button', { name: 'Más' });
+    more.focus();
+    fireEvent.keyDown(more, { key: 'ArrowUp' });
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Órdenes' }));
+
+    expect(
+      screen.getByRole('heading', { name: 'Órdenes' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('No hay órdenes pendientes')).toBeInTheDocument();
+  });
+
   it('crea una persona desde Grupo familiar y la deja como perfil activo', async () => {
     const newPersonId = '55555555-5555-4555-8555-555555555555';
     let currentPeople = [...people];
@@ -188,7 +212,9 @@ describe('organizador multi-persona', () => {
               notes: '',
               archived: false,
               appointmentCount: 0,
+              orderCount: 0,
               medicationCount: 0,
+              prescriptionCount: 0,
               taskCount: 0,
             },
           ];
@@ -200,7 +226,9 @@ describe('organizador multi-persona', () => {
           return Response.json({
             person: currentPeople.at(-1),
             appointments: [],
+            orders: [],
             medications: [],
+            prescriptions: [],
             tasks: [],
           });
         return Response.json(anaData);

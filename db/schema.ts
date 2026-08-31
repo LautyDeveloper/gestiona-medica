@@ -154,3 +154,64 @@ export const tasks = sqliteTable(
     ),
   ],
 );
+
+export const medicalOrders = sqliteTable(
+  'medical_orders',
+  {
+    id: text('id').primaryKey(),
+    personId: text('person_id')
+      .notNull()
+      .references(() => persons.id),
+    specialty: text('specialty').notNull(),
+    reason: text('reason').notNull(),
+    requestedBy: text('requested_by').notNull(),
+    issueDate: text('issue_date').notNull(),
+    expirationDate: text('expiration_date').notNull(),
+    notes: text('notes').notNull().default(''),
+    status: text('status').notNull().default('pending'),
+    appointmentId: text('appointment_id').references(() => appointments.id, {
+      onDelete: 'set null',
+    }),
+    usedAt: text('used_at'),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('idx_medical_orders_person_status_expiration').on(
+      table.personId,
+      table.status,
+      table.expirationDate,
+    ),
+  ],
+);
+
+export const prescriptions = sqliteTable(
+  'prescriptions',
+  {
+    id: text('id').primaryKey(),
+    personId: text('person_id')
+      .notNull()
+      .references(() => persons.id),
+    medicationName: text('medication_name').notNull(),
+    presentation: text('presentation').notNull(),
+    dose: text('dose').notNull(),
+    frequency: text('frequency').notNull(),
+    duration: text('duration').notNull(),
+    prescribedBy: text('prescribed_by').notNull(),
+    issueDate: text('issue_date').notNull(),
+    expirationDate: text('expiration_date').notNull(),
+    notes: text('notes').notNull().default(''),
+    status: text('status').notNull().default('pending'),
+    medicationId: text('medication_id').references(() => medications.id, {
+      onDelete: 'set null',
+    }),
+    usedAt: text('used_at'),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('idx_prescriptions_person_status_expiration').on(
+      table.personId,
+      table.status,
+      table.expirationDate,
+    ),
+  ],
+);

@@ -63,6 +63,95 @@ describe('formularios de registros', () => {
     );
   });
 
+  it('crea una orden médica con emisión y vencimiento', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RecordDialog
+        entity="order"
+        personId={personId}
+        value={null}
+        open
+        onOpenChange={vi.fn()}
+        onSave={onSave}
+      />,
+    );
+    await userEvent.type(screen.getByLabelText(/Especialidad/), 'Cardiología');
+    await userEvent.type(
+      screen.getByLabelText(/Motivo de la orden/),
+      'Control',
+    );
+    await userEvent.type(
+      screen.getByLabelText(/Médico solicitante/),
+      'Dra. Pérez',
+    );
+    await userEvent.clear(screen.getByLabelText(/Fecha de emisión/));
+    await userEvent.type(
+      screen.getByLabelText(/Fecha de emisión/),
+      '2026-08-01',
+    );
+    await userEvent.type(
+      screen.getByLabelText(/Fecha de vencimiento/),
+      '2026-09-01',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(onSave).toHaveBeenCalledWith(
+      'order',
+      expect.objectContaining({
+        specialty: 'Cardiología',
+        issueDate: '2026-08-01',
+        expirationDate: '2026-09-01',
+        personId,
+      }),
+      undefined,
+    );
+  });
+
+  it('crea una receta con el detalle clínico completo', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <RecordDialog
+        entity="prescription"
+        personId={personId}
+        value={null}
+        open
+        onOpenChange={vi.fn()}
+        onSave={onSave}
+      />,
+    );
+    await userEvent.type(screen.getByLabelText(/^Medicamento/), 'Losartán');
+    await userEvent.type(
+      screen.getByLabelText(/Presentación/),
+      'Comprimidos de 50 mg',
+    );
+    await userEvent.type(screen.getByLabelText(/Dosis/), '50 mg');
+    await userEvent.type(screen.getByLabelText(/Frecuencia/), 'Diario');
+    await userEvent.type(screen.getByLabelText(/Duración/), '30 días');
+    await userEvent.type(
+      screen.getByLabelText(/Médico prescriptor/),
+      'Dra. Pérez',
+    );
+    await userEvent.clear(screen.getByLabelText(/Fecha de emisión/));
+    await userEvent.type(
+      screen.getByLabelText(/Fecha de emisión/),
+      '2026-08-01',
+    );
+    await userEvent.type(
+      screen.getByLabelText(/Fecha de vencimiento/),
+      '2026-09-01',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(onSave).toHaveBeenCalledWith(
+      'prescription',
+      expect.objectContaining({
+        medicationName: 'Losartán',
+        presentation: 'Comprimidos de 50 mg',
+        duration: '30 días',
+        personId,
+      }),
+      undefined,
+    );
+  });
+
   it('crea un pendiente válido', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
