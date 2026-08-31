@@ -1,5 +1,6 @@
 const ALGORITHM = 'pbkdf2-sha256';
-const ITERATIONS = 210_000;
+// Cloudflare Workers supports at most 100,000 PBKDF2 iterations per derive call.
+const ITERATIONS = 100_000;
 const KEY_BYTES = 32;
 
 function encode(bytes: Uint8Array) {

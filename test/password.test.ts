@@ -40,5 +40,6 @@ describe('contraseñas locales', () => {
   it('reconoce el formato de hash usado por la aplicación', async () => {
     const hash = await hashPassword(createTestPassword());
     expect(isPasswordHashSupported(hash)).toBe(true);
+    expect(hash.split('$')[1]).toBe('100000');
   });
 });
