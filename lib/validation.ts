@@ -70,14 +70,43 @@ export const changePasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 
+export function normalizeAppointmentTime(value: string) {
+  const compact = value
+    .trim()
+    .toLocaleLowerCase('es-AR')
+    .replaceAll('.', '')
+    .replaceAll(/\s/g, '');
+  const match = /^(\d{1,2})(?::(\d{1,2}))?(am|pm|h|hs)?$/.exec(compact);
+  if (!match) return value.trim();
+
+  let hour = Number(match[1]);
+  const minute = Number(match[2] || '0');
+  const suffix = match[3];
+  if (minute > 59) return value.trim();
+  if (suffix === 'am' || suffix === 'pm') {
+    if (hour < 1 || hour > 12) return value.trim();
+    if (suffix === 'am' && hour === 12) hour = 0;
+    if (suffix === 'pm' && hour !== 12) hour += 12;
+  } else if (hour > 23) return value.trim();
+
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
 export const appointmentSchema = z.object({
   personId: z.uuid().optional(),
   specialty: cleanText('La especialidad', 100),
   doctor: cleanText('El médico', 120),
   date: isoDate,
-  time: z
-    .string()
-    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Ingresá una hora válida'),
+  time: z.preprocess(
+    (value) =>
+      typeof value === 'string' ? normalizeAppointmentTime(value) : value,
+    z
+      .string()
+      .regex(
+        /^([01]\d|2[0-3]):[0-5]\d$/,
+        'Ingresá una hora válida, por ejemplo 14:00',
+      ),
+  ),
   place: cleanText('El lugar', 160),
   bring: cleanText('Qué llevar', 500),
   notes: optionalText(1000),

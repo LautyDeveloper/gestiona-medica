@@ -24,7 +24,7 @@ import type {
   Medication,
 } from '@/lib/models';
 import { ApiError } from '@/lib/client-api';
-import { recordSchemas } from '@/lib/validation';
+import { normalizeAppointmentTime, recordSchemas } from '@/lib/validation';
 
 type RecordValue = Appointment | Medication | MedicalTask;
 
@@ -221,10 +221,17 @@ export function RecordDialog({
                 <Field label="Hora" required error={errors.time}>
                   <Input
                     required
-                    type="time"
+                    inputMode="text"
                     value={text('time')}
                     onChange={(e) => update('time', e.target.value)}
+                    onBlur={() =>
+                      update('time', normalizeAppointmentTime(text('time')))
+                    }
+                    placeholder="Ej. 14:00 o 2 pm"
                   />
+                  <span className="text-xs font-normal text-muted-foreground">
+                    Formato de 24 horas. También podés escribir “2 pm”.
+                  </span>
                 </Field>
               </div>
               <Field label="Lugar" required error={errors.place}>

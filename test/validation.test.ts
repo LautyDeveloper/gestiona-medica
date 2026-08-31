@@ -49,6 +49,28 @@ describe('validaciones', () => {
         bring: '',
       }).success,
     ).toBe(false));
+  it('acepta y normaliza horas de 24 horas y expresiones am/pm', () => {
+    const appointment = {
+      specialty: 'Cardiología',
+      doctor: 'Dra. Pérez',
+      date: '2026-09-07',
+      place: 'Consultorio',
+      bring: 'Estudios',
+    };
+
+    expect(appointmentSchema.parse({ ...appointment, time: '14' }).time).toBe(
+      '14:00',
+    );
+    expect(
+      appointmentSchema.parse({ ...appointment, time: '2 p. m.' }).time,
+    ).toBe('14:00');
+    expect(
+      appointmentSchema.parse({ ...appointment, time: '12 am' }).time,
+    ).toBe('00:00');
+    expect(
+      appointmentSchema.safeParse({ ...appointment, time: '25:00' }).success,
+    ).toBe(false);
+  });
   it('acepta medicamento y pendiente válidos', () => {
     expect(
       medicationSchema.safeParse({

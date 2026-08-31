@@ -21,13 +21,17 @@ describe('formularios de registros', () => {
     await userEvent.type(screen.getByLabelText(/Especialidad/), 'Cardiología');
     await userEvent.type(screen.getByLabelText(/^Médico/), 'Dra. Pérez');
     await userEvent.type(screen.getByLabelText(/Fecha/), '2026-09-01');
-    await userEvent.type(screen.getByLabelText(/Hora/), '10:00');
+    await userEvent.type(screen.getByLabelText(/Hora/), '2 pm');
     await userEvent.type(screen.getByLabelText(/Lugar/), 'Hospital');
     await userEvent.type(screen.getByLabelText(/Qué llevar/), 'DNI');
     await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
     expect(onSave).toHaveBeenCalledWith(
       'appointment',
-      expect.objectContaining({ specialty: 'Cardiología', personId }),
+      expect.objectContaining({
+        specialty: 'Cardiología',
+        time: '14:00',
+        personId,
+      }),
       undefined,
     );
   });
