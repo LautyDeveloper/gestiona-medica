@@ -94,7 +94,7 @@ export function GroupView({
               {data.persons.map((person) => (
                 <div
                   key={person.id}
-                  className="flex items-center justify-between rounded-xl border p-3"
+                  className="flex items-center justify-between rounded-xl border bg-muted/20 p-3 shadow-sm"
                 >
                   <span className="font-medium">{person.name}</span>
                   <span className="text-xs text-muted-foreground">
@@ -149,16 +149,21 @@ export function GroupView({
         </CardHeader>
         <CardContent className="grid gap-3">
           {data.members.map((member) => (
-            <div key={member.id} className="rounded-xl border p-3">
+            <div
+              key={member.id}
+              className="rounded-xl border bg-muted/20 p-3 shadow-sm"
+            >
               <div className="flex items-center gap-3">
-                <UserRound className="text-primary" />
+                <span className="grid size-9 place-items-center rounded-xl bg-primary/10 text-primary">
+                  <UserRound className="size-4" />
+                </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{member.displayName}</p>
                   <p className="truncate text-xs text-muted-foreground">
                     @{member.username}
                   </p>
                 </div>
-                <span className="rounded-full bg-secondary px-2 py-1 text-xs">
+                <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
                   Cuidador
                 </span>
               </div>

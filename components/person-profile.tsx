@@ -186,15 +186,15 @@ export function Onboarding({
   onSave: (data: PersonPayload) => Promise<void>;
 }) {
   return (
-    <main className="grid min-h-dvh place-items-center bg-background px-5 py-10 text-foreground">
-      <section className="w-full max-w-xl rounded-3xl border bg-card p-6 shadow-[0_24px_80px_-48px_rgba(23,72,54,.65)] sm:p-9">
-        <div className="grid size-14 place-items-center rounded-2xl bg-primary text-primary-foreground">
+    <main className="grid min-h-dvh place-items-center bg-transparent px-5 py-10 text-foreground">
+      <section className="app-surface w-full max-w-xl rounded-3xl p-6 sm:p-9">
+        <div className="grid size-14 place-items-center rounded-2xl bg-gradient-to-br from-primary to-prescription text-primary-foreground shadow-md shadow-primary/20 ring-1 ring-white/15">
           <HeartHandshake className="size-7" />
         </div>
         <p className="mt-7 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
           Bienvenido a Cerca
         </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em]">
+        <h1 className="mt-2 text-3xl font-bold tracking-[-0.04em]">
           ¿A quién vas a acompañar?
         </h1>
         <p className="mt-3 mb-7 text-sm leading-6 text-muted-foreground">
@@ -219,9 +219,9 @@ export function NoActivePeople({
   onManage: () => void;
 }) {
   return (
-    <main className="grid min-h-dvh place-items-center bg-background p-6 text-foreground">
-      <section className="max-w-md rounded-3xl border bg-card p-8 text-center">
-        <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-secondary text-primary">
+    <main className="grid min-h-dvh place-items-center bg-transparent p-6 text-foreground">
+      <section className="app-surface max-w-md rounded-3xl p-8 text-center">
+        <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15">
           <Users />
         </div>
         <h1 className="mt-4 text-xl font-semibold">No hay perfiles activos</h1>
@@ -343,7 +343,7 @@ export function PeopleManagerDialog({
             {active.map((person) => (
               <article
                 key={person.id}
-                className="flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center"
+                className="app-surface flex flex-col gap-3 rounded-2xl p-4 sm:flex-row sm:items-center"
               >
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold">{person.name}</p>
@@ -385,7 +385,7 @@ export function PeopleManagerDialog({
               {archived.map((person) => (
                 <article
                   key={person.id}
-                  className="flex flex-col gap-3 rounded-2xl border bg-muted/30 p-4 sm:flex-row sm:items-center"
+                  className="flex flex-col gap-3 rounded-2xl border bg-muted/35 p-4 shadow-sm sm:flex-row sm:items-center"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold">{person.name}</p>

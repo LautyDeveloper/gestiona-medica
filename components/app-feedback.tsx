@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 export function AppLoading() {
   return (
     <div
-      className="min-h-dvh bg-background p-5 md:ml-64 sm:p-8 lg:p-12"
+      className="min-h-dvh bg-transparent p-5 md:ml-64 sm:p-8 lg:p-12"
       aria-label="Cargando datos"
     >
       <div className="mx-auto max-w-6xl space-y-7">
@@ -33,8 +33,8 @@ export function AppError({
   onRetry: () => void;
 }) {
   return (
-    <main className="grid min-h-dvh place-items-center bg-background p-6 text-foreground">
-      <section className="max-w-md rounded-3xl border bg-card p-8 text-center">
+    <main className="grid min-h-dvh place-items-center bg-transparent p-6 text-foreground">
+      <section className="app-surface max-w-md rounded-3xl p-8 text-center">
         <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-destructive/10 text-destructive">
           <AlertTriangle />
         </div>

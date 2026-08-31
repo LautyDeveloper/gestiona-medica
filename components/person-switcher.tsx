@@ -37,15 +37,17 @@ export function PersonSwitcher({
             aria-label={`Perfil activo: ${activePerson.name}`}
             className={
               compact
-                ? 'flex h-10 max-w-44 items-center gap-2 rounded-xl border bg-card px-3 text-sm font-medium'
-                : 'w-full rounded-2xl border border-sidebar-border bg-sidebar-accent/60 p-4 text-left transition-colors hover:bg-sidebar-accent'
+                ? 'app-surface flex h-10 max-w-44 items-center gap-2 rounded-xl px-3 text-sm font-semibold'
+                : 'w-full rounded-2xl border border-sidebar-border bg-sidebar-accent/70 p-4 text-left shadow-sm transition-all hover:border-sidebar-primary/25 hover:bg-sidebar-accent hover:shadow-md'
             }
           />
         }
       >
         {compact ? (
           <>
-            <UserRound className="size-4 shrink-0 text-primary" />
+            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+              <UserRound className="size-4" />
+            </span>
             <span className="truncate">{activePerson.name}</span>
             <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
           </>
