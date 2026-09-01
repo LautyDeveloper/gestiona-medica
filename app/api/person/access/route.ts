@@ -11,6 +11,7 @@ import {
   fieldErrors,
   updatePersonAccessSchema,
 } from '@/lib/validation';
+import { readJson } from '@/lib/api-response';
 
 function invalid(error: Parameters<typeof fieldErrors>[0]) {
   return Response.json(
@@ -33,7 +34,7 @@ async function target(personId: string, careGroupId: string) {
 export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
-    const parsed = createPersonAccessSchema.safeParse(await request.json());
+    const parsed = createPersonAccessSchema.safeParse(await readJson(request));
     if (!parsed.success) return invalid(parsed.error);
     await requireMembership(request, parsed.data.careGroupId, 'admin');
     const person = await target(parsed.data.personId, parsed.data.careGroupId);
@@ -96,7 +97,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     requireSameOrigin(request);
-    const parsed = updatePersonAccessSchema.safeParse(await request.json());
+    const parsed = updatePersonAccessSchema.safeParse(await readJson(request));
     if (!parsed.success) return invalid(parsed.error);
     await requireMembership(request, parsed.data.careGroupId, 'admin');
     const person = await target(parsed.data.personId, parsed.data.careGroupId);
@@ -150,7 +151,7 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   try {
     requireSameOrigin(request);
-    const parsed = deletePersonAccessSchema.safeParse(await request.json());
+    const parsed = deletePersonAccessSchema.safeParse(await readJson(request));
     if (!parsed.success) return invalid(parsed.error);
     await requireMembership(request, parsed.data.careGroupId, 'admin');
     const person = await target(parsed.data.personId, parsed.data.careGroupId);

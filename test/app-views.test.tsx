@@ -4,10 +4,12 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   AppointmentsView,
   MedicationsView,
-  OrdersView,
-  PrescriptionsView,
   TasksView,
 } from '@/components/app-views';
+import {
+  OrdersView,
+  PrescriptionsView,
+} from '@/components/medical-document-views';
 
 const noop = vi.fn();
 const personId = '11111111-1111-4111-8111-111111111111';

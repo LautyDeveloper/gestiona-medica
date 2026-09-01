@@ -4,6 +4,7 @@ import {
   text,
   index,
   uniqueIndex,
+  check,
 } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
@@ -23,6 +24,11 @@ export const users = sqliteTable(
   (table) => [
     uniqueIndex('idx_users_username_nocase').on(
       sql`${table.username} COLLATE NOCASE`,
+    ),
+    check('users_type_check', sql`${table.userType} IN ('caregiver', 'elder')`),
+    check(
+      'users_failed_login_count_check',
+      sql`${table.failedLoginCount} >= 0`,
     ),
   ],
 );
@@ -45,12 +51,21 @@ export const sessions = sqliteTable(
   ],
 );
 
-export const loginRateLimits = sqliteTable('login_rate_limits', {
-  keyHash: text('key_hash').primaryKey(),
-  attemptCount: integer('attempt_count').notNull().default(0),
-  windowStartedAt: text('window_started_at').notNull(),
-  blockedUntil: text('blocked_until'),
-});
+export const loginRateLimits = sqliteTable(
+  'login_rate_limits',
+  {
+    keyHash: text('key_hash').primaryKey(),
+    attemptCount: integer('attempt_count').notNull().default(0),
+    windowStartedAt: text('window_started_at').notNull(),
+    blockedUntil: text('blocked_until'),
+  },
+  (table) => [
+    check(
+      'login_rate_limits_attempt_count_check',
+      sql`${table.attemptCount} >= 0`,
+    ),
+  ],
+);
 
 export const careGroups = sqliteTable('care_groups', {
   id: text('id').primaryKey(),
@@ -77,6 +92,7 @@ export const memberships = sqliteTable(
       table.userId,
     ),
     index('idx_memberships_user').on(table.userId),
+    check('memberships_role_check', sql`${table.role} IN ('admin', 'member')`),
   ],
 );
 
@@ -100,6 +116,8 @@ export const persons = sqliteTable(
       table.archived,
       table.name,
     ),
+    check('persons_archived_check', sql`${table.archived} IN (0, 1)`),
+    check('persons_version_check', sql`${table.version} > 0`),
   ],
 );
 
@@ -133,6 +151,11 @@ export const appointments = sqliteTable(
   },
   (table) => [
     index('idx_appointments_person_date').on(table.personId, table.date),
+    check(
+      'appointments_status_check',
+      sql`${table.status} IN ('Próximo', 'Realizado', 'Cancelado')`,
+    ),
+    check('appointments_version_check', sql`${table.version} > 0`),
   ],
 );
 export const medications = sqliteTable(
@@ -152,6 +175,8 @@ export const medications = sqliteTable(
   },
   (table) => [
     index('idx_medications_person_active').on(table.personId, table.active),
+    check('medications_active_check', sql`${table.active} IN (0, 1)`),
+    check('medications_version_check', sql`${table.version} > 0`),
   ],
 );
 export const tasks = sqliteTable(
@@ -174,6 +199,15 @@ export const tasks = sqliteTable(
       table.status,
       table.dueDate,
     ),
+    check(
+      'tasks_priority_check',
+      sql`${table.priority} IN ('Normal', 'Importante', 'Urgente')`,
+    ),
+    check(
+      'tasks_status_check',
+      sql`${table.status} IN ('Pendiente', 'Completado')`,
+    ),
+    check('tasks_version_check', sql`${table.version} > 0`),
   ],
 );
 
@@ -203,6 +237,11 @@ export const medicalOrders = sqliteTable(
       table.status,
       table.expirationDate,
     ),
+    check(
+      'medical_orders_status_check',
+      sql`${table.status} IN ('pending', 'used')`,
+    ),
+    check('medical_orders_version_check', sql`${table.version} > 0`),
   ],
 );
 
@@ -235,5 +274,10 @@ export const prescriptions = sqliteTable(
       table.status,
       table.expirationDate,
     ),
+    check(
+      'prescriptions_status_check',
+      sql`${table.status} IN ('pending', 'used')`,
+    ),
+    check('prescriptions_version_check', sql`${table.version} > 0`),
   ],
 );

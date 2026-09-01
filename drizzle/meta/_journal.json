@@ -64,6 +64,13 @@
       "when": 1788230163766,
       "tag": "0008_plain_wolf_cub",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1788231294688,
+      "tag": "0009_ancient_carlie_cooper",
+      "breakpoints": true
     }
   ]
 }

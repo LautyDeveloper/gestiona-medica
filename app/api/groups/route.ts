@@ -6,6 +6,7 @@ import {
   requireSameOrigin,
 } from '@/lib/server-auth';
 import { careGroupSchema } from '@/lib/validation';
+import { readJson } from '@/lib/api-response';
 
 export async function GET(request: Request) {
   try {
@@ -57,7 +58,7 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   try {
     requireSameOrigin(request);
-    const body = (await request.json()) as { id?: string; name?: string };
+    const body = (await readJson(request)) as { id?: string; name?: string };
     await requireMembership(request, body.id || '', 'admin');
     const parsed = careGroupSchema.safeParse({ name: body.name });
     if (!parsed.success)

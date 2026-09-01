@@ -10,11 +10,12 @@ import {
   fieldErrors,
   resetPasswordSchema,
 } from '@/lib/validation';
+import { readJson } from '@/lib/api-response';
 
 export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
-    const parsed = createUserSchema.safeParse(await request.json());
+    const parsed = createUserSchema.safeParse(await readJson(request));
     if (!parsed.success)
       return Response.json(
         {
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     requireSameOrigin(request);
-    const parsed = resetPasswordSchema.safeParse(await request.json());
+    const parsed = resetPasswordSchema.safeParse(await readJson(request));
     if (!parsed.success)
       return Response.json(
         { error: 'Revisá la contraseña', details: fieldErrors(parsed.error) },

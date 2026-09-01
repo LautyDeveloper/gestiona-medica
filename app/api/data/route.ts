@@ -11,11 +11,8 @@ import type {
   Prescription,
 } from '@/lib/models';
 import { entitySchema, fieldErrors, recordSchemas } from '@/lib/validation';
-import {
-  authError,
-  requireMembership,
-  requireSameOrigin,
-} from '@/lib/server-auth';
+import { requireMembership, requireSameOrigin } from '@/lib/server-auth';
+import { handleApiError, jsonError, readJson } from '@/lib/api-response';
 
 const tables: Record<Entity, string> = {
   appointment: 'appointments',
@@ -24,10 +21,6 @@ const tables: Record<Entity, string> = {
   prescription: 'prescriptions',
   task: 'tasks',
 };
-
-function apiError(message: string, status: number, details?: unknown) {
-  return Response.json({ error: message, details }, { status });
-}
 
 type ActivePersonResult =
   | { ok: false; error: Response }
@@ -41,7 +34,7 @@ async function activePerson(
   if (!id.success)
     return {
       ok: false,
-      error: apiError('Identificador de persona inválido', 400),
+      error: jsonError('Identificador de persona inválido', 400),
     };
   const raw = await getD1()
     .prepare(
@@ -49,9 +42,9 @@ async function activePerson(
     )
     .bind(id.data, careGroupId)
     .first<Omit<Person, 'archived'> & { archived: number }>();
-  if (!raw) return { ok: false, error: apiError('La persona no existe', 404) };
+  if (!raw) return { ok: false, error: jsonError('La persona no existe', 404) };
   if (raw.archived)
-    return { ok: false, error: apiError('La persona está archivada', 409) };
+    return { ok: false, error: jsonError('La persona está archivada', 409) };
   return {
     ok: true,
     person: { ...raw, archived: false } satisfies Person,
@@ -115,23 +108,21 @@ export async function GET(request: Request): Promise<Response> {
       tasks: tasks.results,
     } satisfies AppData);
   } catch (caught) {
-    return caught instanceof Error && 'status' in caught
-      ? authError(caught)
-      : apiError('No se pudieron cargar los datos', 500);
+    return handleApiError(caught, 'No se pudieron cargar los datos');
   }
 }
 
 export async function POST(request: Request): Promise<Response> {
   try {
     requireSameOrigin(request);
-    const body = (await request.json()) as {
+    const body = (await readJson(request)) as {
       entity?: unknown;
       personId?: unknown;
       careGroupId?: string;
       data?: unknown;
     };
     const entityResult = entitySchema.safeParse(body.entity);
-    if (!entityResult.success) return apiError('Entidad inválida', 400);
+    if (!entityResult.success) return jsonError('Entidad inválida', 400);
     await requireMembership(request, body.careGroupId || '');
     const personResult = await activePerson(
       body.personId,
@@ -141,7 +132,7 @@ export async function POST(request: Request): Promise<Response> {
     const entity = entityResult.data;
     const parsed = recordSchemas[entity].safeParse(body.data);
     if (!parsed.success)
-      return apiError(
+      return jsonError(
         'Revisá los campos marcados',
         400,
         fieldErrors(parsed.error),
@@ -252,22 +243,20 @@ export async function POST(request: Request): Promise<Response> {
       changes = result.meta.changes;
     }
     if (!changes)
-      return apiError(
+      return jsonError(
         'Este registro cambió en otro dispositivo. Recargá e intentá nuevamente.',
         409,
       );
     return Response.json({ id }, { status: 201 });
   } catch (caught) {
-    return caught instanceof Error && 'status' in caught
-      ? authError(caught)
-      : apiError('No se pudo guardar el registro', 500);
+    return handleApiError(caught, 'No se pudo guardar el registro');
   }
 }
 
 export async function PATCH(request: Request): Promise<Response> {
   try {
     requireSameOrigin(request);
-    const body = (await request.json()) as {
+    const body = (await readJson(request)) as {
       entity?: unknown;
       id?: unknown;
       personId?: unknown;
@@ -277,7 +266,7 @@ export async function PATCH(request: Request): Promise<Response> {
     const entityResult = entitySchema.safeParse(body.entity);
     const idResult = z.uuid().safeParse(body.id);
     if (!entityResult.success || !idResult.success)
-      return apiError('Solicitud inválida', 400);
+      return jsonError('Solicitud inválida', 400);
     await requireMembership(request, body.careGroupId || '');
     const personResult = await activePerson(
       body.personId,
@@ -287,7 +276,7 @@ export async function PATCH(request: Request): Promise<Response> {
     const entity = entityResult.data;
     const parsed = recordSchemas[entity].safeParse(body.data);
     if (!parsed.success)
-      return apiError(
+      return jsonError(
         'Revisá los campos marcados',
         400,
         fieldErrors(parsed.error),
@@ -299,14 +288,15 @@ export async function PATCH(request: Request): Promise<Response> {
       )
       .bind(idResult.data, personResult.person.id)
       .first();
-    if (!owned) return apiError('El registro no existe para esta persona', 404);
+    if (!owned)
+      return jsonError('El registro no existe para esta persona', 404);
     const data = parsed.data;
     const version = z
       .number()
       .int()
       .positive()
       .safeParse((body.data as { version?: unknown } | null)?.version);
-    if (!version.success) return apiError('Versión de registro inválida', 400);
+    if (!version.success) return jsonError('Versión de registro inválida', 400);
     let changes = 0;
     if (entity === 'appointment') {
       const item = data as Omit<Appointment, 'id' | 'personId'>;
@@ -415,15 +405,13 @@ export async function PATCH(request: Request): Promise<Response> {
       changes = result.meta.changes;
     }
     if (!changes)
-      return apiError(
+      return jsonError(
         'Este registro cambió en otro dispositivo. Recargá e intentá nuevamente.',
         409,
       );
     return Response.json({ ok: true });
   } catch (caught) {
-    return caught instanceof Error && 'status' in caught
-      ? authError(caught)
-      : apiError('No se pudo actualizar el registro', 500);
+    return handleApiError(caught, 'No se pudo actualizar el registro');
   }
 }
 
@@ -434,7 +422,7 @@ export async function DELETE(request: Request): Promise<Response> {
     const entityResult = entitySchema.safeParse(url.searchParams.get('entity'));
     const idResult = z.uuid().safeParse(url.searchParams.get('id'));
     if (!entityResult.success || !idResult.success)
-      return apiError('Solicitud inválida', 400);
+      return jsonError('Solicitud inválida', 400);
     const careGroupId = url.searchParams.get('careGroupId') || '';
     await requireMembership(request, careGroupId);
     const personResult = await activePerson(
@@ -449,11 +437,9 @@ export async function DELETE(request: Request): Promise<Response> {
       .bind(idResult.data, personResult.person.id)
       .run();
     if (!result.meta.changes)
-      return apiError('El registro no existe para esta persona', 404);
+      return jsonError('El registro no existe para esta persona', 404);
     return Response.json({ ok: true });
   } catch (caught) {
-    return caught instanceof Error && 'status' in caught
-      ? authError(caught)
-      : apiError('No se pudo eliminar el registro', 500);
+    return handleApiError(caught, 'No se pudo eliminar el registro');
   }
 }

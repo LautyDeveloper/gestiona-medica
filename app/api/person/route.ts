@@ -7,15 +7,8 @@ import {
   personSchema,
 } from '@/lib/validation';
 import { hashPassword } from '@/lib/password';
-import {
-  authError,
-  requireMembership,
-  requireSameOrigin,
-} from '@/lib/server-auth';
-
-function error(message: string, status: number, details?: unknown) {
-  return Response.json({ error: message, details }, { status });
-}
+import { handleApiError, jsonError, readJson } from '@/lib/api-response';
+import { requireMembership, requireSameOrigin } from '@/lib/server-auth';
 
 export async function GET(request: Request) {
   try {
@@ -57,18 +50,16 @@ export async function GET(request: Request) {
       }),
     } satisfies PeopleData);
   } catch (caught) {
-    return caught instanceof Error && 'status' in caught
-      ? authError(caught)
-      : error('No se pudieron cargar las personas', 500);
+    return handleApiError(caught, 'No se pudieron cargar las personas');
   }
 }
 
 export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
-    const parsed = createPersonSchema.safeParse(await request.json());
+    const parsed = createPersonSchema.safeParse(await readJson(request));
     if (!parsed.success)
-      return error(
+      return jsonError(
         'Revisá los campos marcados',
         400,
         fieldErrors(parsed.error),
@@ -84,7 +75,8 @@ export async function POST(request: Request) {
         .prepare('SELECT 1 FROM users WHERE username = ? COLLATE NOCASE')
         .bind(parsed.data.access.username)
         .first();
-      if (duplicate) return error('Ese nombre de usuario ya está en uso', 409);
+      if (duplicate)
+        return jsonError('Ese nombre de usuario ya está en uso', 409);
     }
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -134,16 +126,14 @@ export async function POST(request: Request) {
     await db.batch(statements);
     return Response.json({ id }, { status: 201 });
   } catch (caught) {
-    return caught instanceof Error && 'status' in caught
-      ? authError(caught)
-      : error('No se pudo guardar el perfil', 500);
+    return handleApiError(caught, 'No se pudo guardar el perfil');
   }
 }
 
 export async function PATCH(request: Request) {
   try {
     requireSameOrigin(request);
-    const body = (await request.json()) as {
+    const body = (await readJson(request)) as {
       id?: unknown;
       careGroupId?: string;
       version?: number;
@@ -152,9 +142,9 @@ export async function PATCH(request: Request) {
     await requireMembership(request, body.careGroupId || '');
     const id = z.uuid().safeParse(body.id);
     const parsed = personSchema.safeParse(body.data);
-    if (!id.success) return error('Identificador de persona inválido', 400);
+    if (!id.success) return jsonError('Identificador de persona inválido', 400);
     if (!parsed.success)
-      return error(
+      return jsonError(
         'Revisá los campos marcados',
         400,
         fieldErrors(parsed.error),
@@ -183,14 +173,12 @@ export async function PATCH(request: Request) {
         .bind(parsed.data.name, id.data),
     ]);
     if (!result.meta.changes)
-      return error(
+      return jsonError(
         'El perfil cambió en otro dispositivo. Recargá e intentá nuevamente.',
         409,
       );
     return Response.json({ ok: true });
   } catch (caught) {
-    return caught instanceof Error && 'status' in caught
-      ? authError(caught)
-      : error('No se pudo actualizar el perfil', 500);
+    return handleApiError(caught, 'No se pudo actualizar el perfil');
   }
 }

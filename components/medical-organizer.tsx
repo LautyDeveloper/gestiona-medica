@@ -1,18 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  CalendarDays,
-  ClipboardCheck,
-  ClipboardPlus,
-  Ellipsis,
-  FileText,
-  Home,
-  Pill,
-  Plus,
-  Users,
-  LogOut,
-} from 'lucide-react';
+import { Ellipsis, Plus, LogOut } from 'lucide-react';
 import { useLocalAuth } from '@/components/auth-shell';
 import { Button } from '@/components/ui/button';
 import { RecordDialog } from '@/components/record-dialog';
@@ -20,10 +9,24 @@ import {
   AppointmentsView,
   HomeView,
   MedicationsView,
-  OrdersView,
-  PrescriptionsView,
   TasksView,
 } from '@/components/app-views';
+import {
+  OrdersView,
+  PrescriptionsView,
+} from '@/components/medical-document-views';
+import {
+  ACTIVE_PERSON_KEY,
+  headers,
+  navItems,
+  type ConversionSource,
+  type DeleteTarget,
+  type RecordValue,
+} from '@/components/medical-organizer-config';
+import {
+  ArchiveDialog,
+  RestoreDialog,
+} from '@/components/organizer-confirmation-dialogs';
 import {
   AppError,
   AppLoading,
@@ -62,15 +65,10 @@ import { Toaster, toast } from '@/components/ui/toast';
 import { ApiError, authorizedFetch, requestJson } from '@/lib/client-api';
 import type {
   AppData,
-  Appointment,
   Entity,
-  MedicalOrder,
-  MedicalTask,
-  Medication,
   PeopleData,
   Person,
   PersonSummary,
-  Prescription,
   Section,
   CareGroup,
   GroupData,
@@ -78,110 +76,6 @@ import type {
   AppUser,
 } from '@/lib/models';
 import { chooseActivePerson } from '@/lib/person-selection';
-
-const ACTIVE_PERSON_KEY = 'activePersonId';
-const navItems: {
-  id: Section;
-  label: string;
-  icon: typeof Home;
-  activeClass: string;
-}[] = [
-  {
-    id: 'home',
-    label: 'Inicio',
-    icon: Home,
-    activeClass: 'bg-primary/10 text-primary ring-primary/15',
-  },
-  {
-    id: 'appointments',
-    label: 'Turnos',
-    icon: CalendarDays,
-    activeClass: 'bg-appointment/10 text-appointment ring-appointment/15',
-  },
-  {
-    id: 'orders',
-    label: 'Órdenes',
-    icon: ClipboardPlus,
-    activeClass: 'bg-order/10 text-order ring-order/15',
-  },
-  {
-    id: 'medications',
-    label: 'Medicamentos',
-    icon: Pill,
-    activeClass: 'bg-medication/10 text-medication ring-medication/15',
-  },
-  {
-    id: 'prescriptions',
-    label: 'Recetas',
-    icon: FileText,
-    activeClass: 'bg-prescription/10 text-prescription ring-prescription/15',
-  },
-  {
-    id: 'tasks',
-    label: 'Pendientes',
-    icon: ClipboardCheck,
-    activeClass: 'bg-task/10 text-task ring-task/15',
-  },
-  {
-    id: 'group',
-    label: 'Grupo familiar',
-    icon: Users,
-    activeClass: 'bg-primary/10 text-primary ring-primary/15',
-  },
-];
-const headers: Record<
-  Section,
-  { title: string; eyebrow: string; action?: string; entity?: Entity }
-> = {
-  home: { title: 'Inicio', eyebrow: 'Resumen de hoy' },
-  appointments: {
-    title: 'Turnos',
-    eyebrow: 'Agenda médica',
-    action: 'Nuevo turno',
-    entity: 'appointment',
-  },
-  orders: {
-    title: 'Órdenes',
-    eyebrow: 'Indicaciones para sacar turno',
-    action: 'Nueva orden',
-    entity: 'order',
-  },
-  medications: {
-    title: 'Medicamentos',
-    eyebrow: 'Tratamiento actual',
-    action: 'Nuevo medicamento',
-    entity: 'medication',
-  },
-  prescriptions: {
-    title: 'Recetas',
-    eyebrow: 'Indicaciones de medicamentos',
-    action: 'Nueva receta',
-    entity: 'prescription',
-  },
-  tasks: {
-    title: 'Pendientes',
-    eyebrow: 'Cosas por resolver',
-    action: 'Nuevo pendiente',
-    entity: 'task',
-  },
-  group: { title: 'Grupo familiar', eyebrow: 'Espacio compartido' },
-};
-
-type RecordValue =
-  | Appointment
-  | MedicalOrder
-  | Medication
-  | Prescription
-  | MedicalTask;
-type ConversionSource =
-  | { entity: 'order'; item: MedicalOrder }
-  | { entity: 'prescription'; item: Prescription };
-type DeleteTarget = {
-  entity: Entity;
-  id: string;
-  personId: string;
-  label: string;
-};
 
 function OrganizerContent() {
   const { logout } = useLocalAuth();
@@ -1236,92 +1130,6 @@ function OrganizerContent() {
         onConfirm={() => void confirmRestore()}
       />
     </div>
-  );
-}
-
-function ArchiveDialog({
-  person,
-  busy,
-  onCancel,
-  onConfirm,
-}: {
-  person: PersonSummary | null;
-  busy: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const total = person
-    ? person.appointmentCount +
-      person.orderCount +
-      person.medicationCount +
-      person.prescriptionCount +
-      person.taskCount
-    : 0;
-  return (
-    <AlertDialog
-      open={Boolean(person)}
-      onOpenChange={(open) => {
-        if (!open && !busy) onCancel();
-      }}
-    >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>¿Archivar a {person?.name}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            {total > 0
-              ? `Tiene ${total} ${total === 1 ? 'registro' : 'registros'} entre turnos, órdenes, medicamentos, recetas y pendientes. Se ocultará del selector, pero toda la información quedará conservada.`
-              : 'Se ocultará del selector y podrás restaurar el perfil cuando quieras.'}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
-          <AlertDialogAction disabled={busy} onClick={onConfirm}>
-            {busy ? 'Archivando…' : 'Archivar perfil'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-
-function RestoreDialog({
-  file,
-  busy,
-  onCancel,
-  onConfirm,
-}: {
-  file: File | null;
-  busy: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <AlertDialog
-      open={Boolean(file)}
-      onOpenChange={(open) => {
-        if (!open && !busy) onCancel();
-      }}
-    >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>¿Reemplazar todos los datos?</AlertDialogTitle>
-          <AlertDialogDescription>
-            El respaldo “{file?.name}” sustituirá todas las personas y su
-            información actual. También se aceptan respaldos de Sprint 1.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={busy}
-            onClick={onConfirm}
-          >
-            {busy ? 'Restaurando…' : 'Restaurar respaldo'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }
 
