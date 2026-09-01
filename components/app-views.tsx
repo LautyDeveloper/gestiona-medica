@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import {
   CalendarDays,
+  CalendarPlus,
   Check,
   CheckCircle2,
   Clock3,
@@ -10,6 +11,7 @@ import {
   Pencil,
   Pill,
   Trash2,
+  Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -235,12 +237,16 @@ export function AppointmentsView({
   onEdit,
   onComplete,
   onDelete,
+  onExport,
+  onExportOne,
 }: {
   items: Appointment[];
   onNew: () => void;
   onEdit: EditFn;
   onComplete: (item: Appointment) => void;
   onDelete: (id: string) => void;
+  onExport?: () => void;
+  onExportOne?: (item: Appointment) => void;
 }) {
   const [filter, setFilter] = useState<Appointment['status']>('Próximo');
   const visible = items.filter((item) => item.status === filter);
@@ -251,6 +257,13 @@ export function AppointmentsView({
   };
   return (
     <div className="page-rise space-y-4">
+      {onExport && (
+        <div className="flex justify-end">
+          <Button variant="outline" onClick={onExport}>
+            <Download /> Exportar próximos
+          </Button>
+        </div>
+      )}
       <FilterBar
         values={(['Próximo', 'Realizado', 'Cancelado'] as const).map(
           (value) => ({
@@ -326,6 +339,11 @@ export function AppointmentsView({
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 lg:justify-end">
+                {item.status === 'Próximo' && onExportOne && (
+                  <Button variant="outline" onClick={() => onExportOne(item)}>
+                    <CalendarPlus /> Calendario
+                  </Button>
+                )}
                 {item.status === 'Próximo' && (
                   <Button variant="secondary" onClick={() => onComplete(item)}>
                     <Check />

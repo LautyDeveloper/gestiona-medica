@@ -86,6 +86,7 @@ const emptyValues: Record<Entity, Record<string, unknown>> = {
     priority: 'Normal',
     status: 'Pendiente',
     notes: '',
+    visibleToElder: false,
   },
 };
 
@@ -156,6 +157,7 @@ export function RecordDialog({
   onOpenChange,
   onSave,
   initialData,
+  canShowToElder = false,
 }: {
   entity: Entity;
   personId: string;
@@ -168,6 +170,7 @@ export function RecordDialog({
     id?: string,
   ) => Promise<void>;
   initialData?: Record<string, unknown>;
+  canShowToElder?: boolean;
 }) {
   const [form, setForm] = useState<Record<string, unknown>>(() =>
     value ? { ...value } : { ...emptyValues[entity], ...initialData, personId },
@@ -548,6 +551,23 @@ export function RecordDialog({
                   </NativeSelect>
                 </Field>
               </div>
+              {canShowToElder && (
+                <div className="flex items-center justify-between rounded-xl border p-3 text-sm font-medium">
+                  <div>
+                    <p>Mostrar a la persona</p>
+                    <p className="mt-1 text-xs font-normal text-muted-foreground">
+                      Podrá ver este pendiente y recibir su alerta.
+                    </p>
+                  </div>
+                  <Switch
+                    aria-label="Mostrar pendiente a la persona"
+                    checked={Boolean(form.visibleToElder)}
+                    onCheckedChange={(checked) =>
+                      update('visibleToElder', checked)
+                    }
+                  />
+                </div>
+              )}
             </>
           )}
           <Field label="Notas (opcional)">

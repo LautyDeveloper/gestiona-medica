@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays,
+  CalendarPlus,
   CheckCircle2,
   Clock3,
   Home,
   LogOut,
+  ListTodo,
   MapPin,
   Pill,
   RefreshCw,
@@ -15,11 +17,19 @@ import {
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ThemeSwitcher } from '@/components/theme-switcher';
-import { requestJson } from '@/lib/client-api';
+import {
+  AlertBell,
+  AlertsView,
+  type AlertAction,
+} from '@/components/alerts-center';
+import { authorizedFetch, requestJson } from '@/lib/client-api';
+import { DEFAULT_ALERT_PREFERENCES } from '@/lib/alerts';
 import { fullArgentinaDate, splitElderAppointments } from '@/lib/elder-view';
 import { formatLongDate } from '@/lib/format';
 import type {
   Appointment,
+  AlertPreferences,
+  AlertsData,
   ElderData,
   ElderSection,
   Medication,
@@ -84,7 +94,13 @@ function MedicationCard({ medication }: { medication: Medication }) {
   );
 }
 
-function AppointmentCard({ appointment }: { appointment: Appointment }) {
+function AppointmentCard({
+  appointment,
+  onExport,
+}: {
+  appointment: Appointment;
+  onExport?: () => void;
+}) {
   return (
     <article className="rounded-3xl border-2 border-appointment/20 bg-card p-5 shadow-[var(--shadow-card)] sm:p-6">
       <div className="flex items-start gap-4">
@@ -124,6 +140,11 @@ function AppointmentCard({ appointment }: { appointment: Appointment }) {
           <p className="mt-2 text-muted-foreground">{appointment.notes}</p>
         )}
       </div>
+      {appointment.status === 'Próximo' && onExport && (
+        <Button className="mt-4" variant="outline" onClick={onExport}>
+          <CalendarPlus /> Agregar al calendario
+        </Button>
+      )}
     </article>
   );
 }
@@ -131,6 +152,10 @@ function AppointmentCard({ appointment }: { appointment: Appointment }) {
 export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
   const [section, setSection] = useState<ElderSection>('home');
   const [data, setData] = useState<ElderData | null>(null);
+  const [alertsData, setAlertsData] = useState<AlertsData | null>(null);
+  const [alertPreferences, setAlertPreferences] = useState<AlertPreferences>(
+    DEFAULT_ALERT_PREFERENCES,
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [appointmentView, setAppointmentView] = useState<
@@ -140,11 +165,36 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
     'active',
   );
 
+  const loadAlertInfo = useCallback(async () => {
+    try {
+      const [nextAlerts, nextPreferences] = await Promise.all([
+        requestJson<AlertsData>('/api/alerts'),
+        requestJson<{ preferences: AlertPreferences }>(
+          '/api/alerts/preferences',
+        ),
+      ]);
+      setAlertsData({
+        alerts: Array.isArray(nextAlerts.alerts) ? nextAlerts.alerts : [],
+        unreadCount:
+          typeof nextAlerts.unreadCount === 'number'
+            ? nextAlerts.unreadCount
+            : 0,
+      });
+      setAlertPreferences(
+        nextPreferences.preferences || DEFAULT_ALERT_PREFERENCES,
+      );
+    } catch {
+      // La información médica principal sigue disponible si fallan alertas.
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setData(await requestJson<ElderData>('/api/elder/data'));
+      const nextData = await requestJson<ElderData>('/api/elder/data');
+      setData(nextData);
+      void loadAlertInfo();
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -154,7 +204,56 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadAlertInfo]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void loadAlertInfo();
+    };
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [loadAlertInfo]);
+
+  async function changeAlert(action: AlertAction) {
+    await requestJson('/api/alerts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(action),
+    });
+    setAlertsData(await requestJson<AlertsData>('/api/alerts'));
+  }
+
+  async function saveAlertPreferences(preferences: AlertPreferences) {
+    const response = await requestJson<{ preferences: AlertPreferences }>(
+      '/api/alerts/preferences',
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(preferences),
+      },
+    );
+    setAlertPreferences(response.preferences);
+    setAlertsData(await requestJson<AlertsData>('/api/alerts'));
+  }
+
+  async function downloadCalendar(appointmentId?: string) {
+    const params = new URLSearchParams();
+    if (appointmentId) params.set('appointmentId', appointmentId);
+    const response = await authorizedFetch(
+      `/api/calendar/appointments.ics?${params.toString()}`,
+    );
+    if (!response.ok) return;
+    const url = URL.createObjectURL(await response.blob());
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = appointmentId ? 'cerca-turno.ics' : 'cerca-turnos.ics';
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => void load());
@@ -237,6 +336,11 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <AlertBell
+              data={alertsData}
+              onAction={changeAlert}
+              onViewAll={() => setSection('alerts')}
+            />
             <ThemeSwitcher />
             <Button
               variant="outline"
@@ -361,6 +465,15 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
             >
               Mis turnos
             </h1>
+            {!!appointments.upcoming.length && (
+              <Button
+                className="mt-4"
+                variant="outline"
+                onClick={() => void downloadCalendar()}
+              >
+                <CalendarPlus /> Exportar próximos
+              </Button>
+            )}
             <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl bg-muted p-1.5">
               <button
                 className={`min-h-12 rounded-xl px-3 text-base font-bold ${appointmentView === 'upcoming' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'}`}
@@ -380,6 +493,11 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
                 <AppointmentCard
                   key={appointment.id}
                   appointment={appointment}
+                  onExport={
+                    appointment.status === 'Próximo'
+                      ? () => void downloadCalendar(appointment.id)
+                      : undefined
+                  }
                 />
               ))}
               {!visibleAppointments.length && (
@@ -439,6 +557,68 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
               )}
             </div>
           </section>
+        )}
+
+        {section === 'tasks' && (
+          <section aria-labelledby="elder-tasks-title">
+            <p className="text-base font-semibold text-task">
+              Para tener presente
+            </p>
+            <h1
+              id="elder-tasks-title"
+              className="mt-1 text-3xl font-black tracking-tight sm:text-4xl"
+            >
+              Mis pendientes
+            </h1>
+            <div className="mt-6 grid gap-4">
+              {data.tasks.map((task) => (
+                <article
+                  key={task.id}
+                  className="rounded-3xl border-2 border-task/20 bg-card p-5 shadow-[var(--shadow-card)]"
+                >
+                  <div className="flex items-start gap-4">
+                    <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-task/15 text-task">
+                      <ListTodo className="size-6" />
+                    </span>
+                    <div>
+                      <h2 className="text-xl font-bold">{task.title}</h2>
+                      <p className="mt-2 text-base text-muted-foreground">
+                        {task.dueDate
+                          ? `Fecha límite: ${task.dueDate}`
+                          : 'Sin fecha límite'}
+                        {' · '}
+                        {task.priority}
+                      </p>
+                      {task.notes && (
+                        <p className="mt-2 text-base">{task.notes}</p>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              ))}
+              {!data.tasks.length && (
+                <EmptyCard
+                  icon={<ListTodo className="size-7" />}
+                  title="No tenés pendientes compartidos"
+                  text="Cuando tu cuidador comparta uno, va a aparecer acá."
+                />
+              )}
+            </div>
+          </section>
+        )}
+
+        {section === 'alerts' && alertsData && (
+          <AlertsView
+            key={`${alertPreferences.appointmentLeadMinutes}-${alertPreferences.taskLeadDays}-${alertPreferences.documentLeadDays}`}
+            elder
+            data={alertsData}
+            preferences={alertPreferences}
+            onAction={changeAlert}
+            onNavigate={(alert) =>
+              setSection(alert.kind === 'task' ? 'tasks' : 'appointments')
+            }
+            onSavePreferences={saveAlertPreferences}
+          />
         )}
       </main>
 

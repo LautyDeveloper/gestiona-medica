@@ -91,7 +91,7 @@ export async function GET(request: Request): Promise<Response> {
           .all<Prescription>(),
         db
           .prepare(
-            "SELECT id, person_id AS personId, title, due_date AS dueDate, priority, status, notes, version FROM tasks WHERE person_id = ? ORDER BY CASE status WHEN 'Pendiente' THEN 0 ELSE 1 END, CASE WHEN due_date = '' THEN 1 ELSE 0 END, due_date",
+            "SELECT id, person_id AS personId, title, due_date AS dueDate, priority, status, notes, visible_to_elder AS visibleToElder, version FROM tasks WHERE person_id = ? ORDER BY CASE status WHEN 'Pendiente' THEN 0 ELSE 1 END, CASE WHEN due_date = '' THEN 1 ELSE 0 END, due_date",
           )
           .bind(person.id)
           .all<MedicalTask>(),
@@ -105,7 +105,10 @@ export async function GET(request: Request): Promise<Response> {
         active: Boolean(item.active),
       })),
       prescriptions: prescriptions.results,
-      tasks: tasks.results,
+      tasks: tasks.results.map((item) => ({
+        ...item,
+        visibleToElder: Boolean(item.visibleToElder),
+      })),
     } satisfies AppData);
   } catch (caught) {
     return handleApiError(caught, 'No se pudieron cargar los datos');
@@ -228,7 +231,7 @@ export async function POST(request: Request): Promise<Response> {
       const item = data as Omit<MedicalTask, 'id' | 'personId'>;
       const result = await db
         .prepare(
-          'INSERT INTO tasks (id, person_id, title, due_date, priority, status, notes, version) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
+          'INSERT INTO tasks (id, person_id, title, due_date, priority, status, notes, visible_to_elder, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)',
         )
         .bind(
           id,
@@ -238,6 +241,7 @@ export async function POST(request: Request): Promise<Response> {
           item.priority,
           item.status,
           item.notes,
+          item.visibleToElder ? 1 : 0,
         )
         .run();
       changes = result.meta.changes;
@@ -389,7 +393,7 @@ export async function PATCH(request: Request): Promise<Response> {
       const item = data as Omit<MedicalTask, 'id' | 'personId'>;
       const result = await db
         .prepare(
-          'UPDATE tasks SET title = ?, due_date = ?, priority = ?, status = ?, notes = ?, version = version + 1 WHERE id = ? AND person_id = ? AND version = ?',
+          'UPDATE tasks SET title = ?, due_date = ?, priority = ?, status = ?, notes = ?, visible_to_elder = ?, version = version + 1 WHERE id = ? AND person_id = ? AND version = ?',
         )
         .bind(
           item.title,
@@ -397,6 +401,7 @@ export async function PATCH(request: Request): Promise<Response> {
           item.priority,
           item.status,
           item.notes,
+          item.visibleToElder ? 1 : 0,
           idResult.data,
           personResult.person.id,
           version.data,

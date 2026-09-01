@@ -224,7 +224,7 @@ describe('respaldo multi-persona', () => {
 
   it('acepta una copia íntegra con perfiles activos y archivados', () =>
     expect(backupSchema.safeParse(valid).success).toBe(true));
-  it('convierte respaldos de Sprint 1 a versión 4', () => {
+  it('convierte respaldos de Sprint 1 a versión 5', () => {
     const legacy = {
       schemaVersion: 1,
       exportedAt: valid.exportedAt,
@@ -240,7 +240,7 @@ describe('respaldo multi-persona', () => {
       tasks: [],
     };
     const parsed = backupImportSchema.parse(legacy);
-    expect(parsed.schemaVersion).toBe(4);
+    expect(parsed.schemaVersion).toBe(5);
     expect(parsed.persons).toEqual([{ ...legacy.person, archived: false }]);
     expect(parsed.orders).toEqual([]);
     expect(parsed.prescriptions).toEqual([]);

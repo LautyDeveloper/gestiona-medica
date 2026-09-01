@@ -1,4 +1,5 @@
 import {
+  BellRing,
   CalendarDays,
   ClipboardCheck,
   ClipboardPlus,
@@ -62,6 +63,12 @@ export const navItems: {
     activeClass: 'bg-task/10 text-task ring-task/15',
   },
   {
+    id: 'alerts',
+    label: 'Alertas',
+    icon: BellRing,
+    activeClass: 'bg-destructive/10 text-destructive ring-destructive/15',
+  },
+  {
     id: 'group',
     label: 'Grupo familiar',
     icon: Users,
@@ -104,6 +111,7 @@ export const headers: Record<
     action: 'Nuevo pendiente',
     entity: 'task',
   },
+  alerts: { title: 'Alertas', eyebrow: 'Recordatorios y vencimientos' },
   group: { title: 'Grupo familiar', eyebrow: 'Espacio compartido' },
 };
 

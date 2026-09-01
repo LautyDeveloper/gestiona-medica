@@ -25,8 +25,24 @@ const legacyMigrations = [
 ];
 const documentMigration = '0006_medical_orders_prescriptions.sql';
 const documentTables = ['medical_orders', 'prescriptions'];
+const alertsMigration = '0010_sloppy_peter_parker.sql';
+const alertTables = ['alert_preferences', 'alert_states'];
 
 const expectedColumns = {
+  alert_preferences: [
+    'user_id',
+    'appointment_lead_minutes',
+    'task_lead_days',
+    'document_lead_days',
+    'updated_at',
+  ],
+  alert_states: [
+    'user_id',
+    'alert_key',
+    'read_at',
+    'snoozed_until',
+    'updated_at',
+  ],
   appointments: [
     'id',
     'person_id',
@@ -111,6 +127,7 @@ const expectedColumns = {
     'status',
     'notes',
     'version',
+    'visible_to_elder',
   ],
   users: [
     'id',
@@ -126,6 +143,7 @@ const expectedColumns = {
 };
 
 const expectedIndexes = [
+  'idx_alert_states_user_updated',
   'idx_appointments_person_date',
   'idx_medications_person_active',
   'idx_medical_orders_person_status_expiration',
@@ -142,6 +160,8 @@ const expectedIndexes = [
 const expectedTriggers = [
   'persons_care_group_insert',
   'persons_care_group_update',
+  'tasks_elder_visibility_insert',
+  'tasks_elder_visibility_update',
 ];
 
 function wrangler(args, { json = false, inherit = false } = {}) {
@@ -215,16 +235,23 @@ function inspectSchema() {
 
   const problems = [];
   const missing = appTables.filter((name) => !presentTables.has(name));
+  const missingWithoutAlerts = missing.filter(
+    (name) => !alertTables.includes(name),
+  );
   const documentsMissing = documentTables.every((name) =>
-    missing.includes(name),
+    missingWithoutAlerts.includes(name),
   );
   const onlyDocumentsMissing =
-    documentsMissing && missing.length === documentTables.length;
+    documentsMissing && missingWithoutAlerts.length === documentTables.length;
   const migrations = hasMigrationTable ? appliedMigrations(true) : [];
   const documentsMayBePending =
     onlyDocumentsMissing && !migrations.includes(documentMigration);
-  if (missing.length && !documentsMayBePending) {
-    problems.push(`faltan tablas: ${missing.join(', ')}`);
+  const alertsMayBePending = !migrations.includes(alertsMigration);
+  const unexpectedMissing = missing.filter(
+    (name) => !(alertsMayBePending && alertTables.includes(name)),
+  );
+  if (unexpectedMissing.length && !documentsMayBePending) {
+    problems.push(`faltan tablas: ${unexpectedMissing.join(', ')}`);
   }
 
   for (const [table, expected] of Object.entries(expectedColumns)) {
@@ -232,7 +259,11 @@ function inspectSchema() {
     const columns = query(`PRAGMA table_info(${table})`).map(
       ({ name }) => name,
     );
-    if (columns.join('|') !== expected.join('|'))
+    const expectedBeforeAlerts =
+      alertsMayBePending && table === 'tasks'
+        ? expected.filter((column) => column !== 'visible_to_elder')
+        : expected;
+    if (columns.join('|') !== expectedBeforeAlerts.join('|'))
       problems.push(`las columnas de ${table} no coinciden`);
   }
 
@@ -246,7 +277,8 @@ function inspectSchema() {
   const missingIndexes = expectedIndexes.filter(
     (name) =>
       !presentIndexes.has(name) &&
-      !(documentsMayBePending && documentIndexes.has(name)),
+      !(documentsMayBePending && documentIndexes.has(name)) &&
+      !(alertsMayBePending && name === 'idx_alert_states_user_updated'),
   );
   if (missingIndexes.length)
     problems.push(`faltan índices: ${missingIndexes.join(', ')}`);
@@ -255,7 +287,13 @@ function inspectSchema() {
     objects.filter(({ type }) => type === 'trigger').map(({ name }) => name),
   );
   const missingTriggers = expectedTriggers.filter(
-    (name) => !presentTriggers.has(name),
+    (name) =>
+      !presentTriggers.has(name) &&
+      !(
+        alertsMayBePending &&
+        (name === 'tasks_elder_visibility_insert' ||
+          name === 'tasks_elder_visibility_update')
+      ),
   );
   if (missingTriggers.length)
     problems.push(`faltan triggers: ${missingTriggers.join(', ')}`);
