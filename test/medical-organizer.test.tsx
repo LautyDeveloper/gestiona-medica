@@ -106,11 +106,32 @@ function mockApi() {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   window.localStorage.clear();
   vi.unstubAllGlobals();
 });
 
 describe('organizador multi-persona', () => {
+  it('no consulta nuevamente los datos por un intervalo periódico', async () => {
+    const fetchMock = mockApi();
+    vi.stubGlobal('fetch', fetchMock);
+    render(<MedicalOrganizer />);
+    expect(await screen.findByText('Hola, Ana')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([input]) =>
+          String(input).startsWith('/api/groups?'),
+        ),
+      ).toBe(true),
+    );
+    const callsAfterLoad = fetchMock.mock.calls.length;
+
+    vi.useFakeTimers();
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(callsAfterLoad);
+  });
+
   it('restaura la última persona seleccionada sin mostrar datos ajenos', async () => {
     window.localStorage.setItem(`activePersonId:${groupId}`, luisId);
     vi.stubGlobal('fetch', mockApi());

@@ -200,6 +200,7 @@ function OrganizerContent() {
   const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
   const requestRef = useRef<AbortController | null>(null);
+  const backgroundRefreshRef = useRef(false);
   const [dialog, setDialog] = useState<{
     open: boolean;
     entity: Entity;
@@ -221,13 +222,19 @@ function OrganizerContent() {
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
 
   const loadPersonData = useCallback(
-    async (personId: string, careGroupId = activeGroupIdRef.current) => {
+    async (
+      personId: string,
+      careGroupId = activeGroupIdRef.current,
+      { background = false }: { background?: boolean } = {},
+    ) => {
       requestRef.current?.abort();
       const controller = new AbortController();
       requestRef.current = controller;
-      setContentLoading(true);
-      setLoadError('');
-      setData(null);
+      if (!background) {
+        setContentLoading(true);
+        setLoadError('');
+        setData(null);
+      }
       try {
         const next = await requestJson<AppData>(
           `/api/data?personId=${encodeURIComponent(personId)}&careGroupId=${encodeURIComponent(careGroupId)}`,
@@ -245,18 +252,21 @@ function OrganizerContent() {
           activePersonIdRef.current === personId &&
           activeGroupIdRef.current === careGroupId
         )
-          setLoadError(
-            error instanceof Error
-              ? error.message
-              : 'No se pudo cargar este perfil.',
-          );
+          if (!background)
+            setLoadError(
+              error instanceof Error
+                ? error.message
+                : 'No se pudo cargar este perfil.',
+            );
       } finally {
         if (
+          !background &&
           !controller.signal.aborted &&
           activePersonIdRef.current === personId &&
           activeGroupIdRef.current === careGroupId
         )
           setContentLoading(false);
+        if (requestRef.current === controller) requestRef.current = null;
       }
     },
     [],
@@ -345,21 +355,31 @@ function OrganizerContent() {
   }, [bootstrap]);
 
   useEffect(() => {
-    const refresh = () => {
+    const refresh = async () => {
       if (document.visibilityState !== 'visible' || !activeGroupIdRef.current)
         return;
-      void loadPeople();
-      void loadGroup();
-      if (activePersonIdRef.current)
-        void loadPersonData(activePersonIdRef.current);
+      if (backgroundRefreshRef.current) return;
+      backgroundRefreshRef.current = true;
+      const personId = activePersonIdRef.current;
+      const careGroupId = activeGroupIdRef.current;
+      try {
+        await Promise.all([
+          loadPeople(careGroupId),
+          loadGroup(careGroupId),
+          personId
+            ? loadPersonData(personId, careGroupId, { background: true })
+            : Promise.resolve(),
+        ]);
+      } finally {
+        backgroundRefreshRef.current = false;
+      }
     };
-    const interval = window.setInterval(refresh, 30_000);
-    document.addEventListener('visibilitychange', refresh);
-    window.addEventListener('focus', refresh);
+    const refreshWhenVisible = () => void refresh();
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('focus', refreshWhenVisible);
     return () => {
-      window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', refresh);
-      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('focus', refreshWhenVisible);
     };
   }, [loadGroup, loadPeople, loadPersonData]);
 
