@@ -44,6 +44,11 @@ import { PersonSwitcher } from '@/components/person-switcher';
 import { ThemeSwitcher } from '@/components/theme-switcher';
 import { GroupView, type NewUserPayload } from '@/components/group-management';
 import {
+  AlertBell,
+  AlertsView,
+  type AlertAction,
+} from '@/components/alerts-center';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -74,8 +79,12 @@ import type {
   GroupData,
   SessionData,
   AppUser,
+  Alert,
+  AlertPreferences,
+  AlertsData,
 } from '@/lib/models';
 import { chooseActivePerson } from '@/lib/person-selection';
+import { DEFAULT_ALERT_PREFERENCES } from '@/lib/alerts';
 
 function OrganizerContent() {
   const { logout } = useLocalAuth();
@@ -89,6 +98,10 @@ function OrganizerContent() {
   const [activePersonId, setActivePersonId] = useState<string | null>(null);
   const activePersonIdRef = useRef<string | null>(null);
   const [data, setData] = useState<AppData | null>(null);
+  const [alertsData, setAlertsData] = useState<AlertsData | null>(null);
+  const [alertPreferences, setAlertPreferences] = useState<AlertPreferences>(
+    DEFAULT_ALERT_PREFERENCES,
+  );
   const [initialLoading, setInitialLoading] = useState(true);
   const [contentLoading, setContentLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -201,6 +214,37 @@ function OrganizerContent() {
     [],
   );
 
+  const loadAlerts = useCallback(
+    async (careGroupId = activeGroupIdRef.current) => {
+      if (!careGroupId) return null;
+      const response = await requestJson<AlertsData>(
+        `/api/alerts?careGroupId=${encodeURIComponent(careGroupId)}`,
+      );
+      const normalized = {
+        alerts: Array.isArray(response.alerts) ? response.alerts : [],
+        unreadCount:
+          typeof response.unreadCount === 'number' ? response.unreadCount : 0,
+      };
+      if (activeGroupIdRef.current === careGroupId) setAlertsData(normalized);
+      return normalized;
+    },
+    [],
+  );
+
+  const loadAlertPreferences = useCallback(
+    async (careGroupId = activeGroupIdRef.current) => {
+      if (!careGroupId) return DEFAULT_ALERT_PREFERENCES;
+      const response = await requestJson<{ preferences: AlertPreferences }>(
+        `/api/alerts/preferences?careGroupId=${encodeURIComponent(careGroupId)}`,
+      );
+      const preferences = response.preferences || DEFAULT_ALERT_PREFERENCES;
+      if (activeGroupIdRef.current === careGroupId)
+        setAlertPreferences(preferences);
+      return preferences;
+    },
+    [],
+  );
+
   const bootstrap = useCallback(async () => {
     setInitialLoading(true);
     setLoadError('');
@@ -218,6 +262,8 @@ function OrganizerContent() {
       setActiveGroupId(group.id);
       const nextPeople = await loadPeople(group.id);
       void loadGroup(group.id);
+      void loadAlerts(group.id);
+      void loadAlertPreferences(group.id);
       const saved = window.localStorage.getItem(
         `${ACTIVE_PERSON_KEY}:${group.id}`,
       );
@@ -238,7 +284,7 @@ function OrganizerContent() {
     } finally {
       setInitialLoading(false);
     }
-  }, [loadGroup, loadPeople, selectPerson]);
+  }, [loadAlertPreferences, loadAlerts, loadGroup, loadPeople, selectPerson]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => void bootstrap());
@@ -260,6 +306,7 @@ function OrganizerContent() {
         await Promise.all([
           loadPeople(careGroupId),
           loadGroup(careGroupId),
+          loadAlerts(careGroupId),
           personId
             ? loadPersonData(personId, careGroupId, { background: true })
             : Promise.resolve(),
@@ -275,7 +322,7 @@ function OrganizerContent() {
       document.removeEventListener('visibilitychange', refreshWhenVisible);
       window.removeEventListener('focus', refreshWhenVisible);
     };
-  }, [loadGroup, loadPeople, loadPersonData]);
+  }, [loadAlerts, loadGroup, loadPeople, loadPersonData]);
 
   function openNew(entity: Entity) {
     setConversion(null);
@@ -478,6 +525,7 @@ function OrganizerContent() {
         }),
       });
       const nextPeople = await loadPeople();
+      await loadAlerts();
       const nextActive = chooseActivePerson(nextPeople);
       if (archived && person.id === activePersonIdRef.current) {
         if (nextActive) await selectPerson(nextActive.id);
@@ -529,12 +577,89 @@ function OrganizerContent() {
     });
     if (activePersonIdRef.current === targetPersonId)
       await loadPersonData(targetPersonId);
-    await loadPeople();
+    await Promise.all([loadPeople(), loadAlerts()]);
     toast.add({
       title: id ? 'Cambios guardados' : 'Registro creado',
       description: 'La información quedó guardada en el perfil correcto.',
       type: 'success',
     });
+  }
+
+  async function changeAlert(action: AlertAction) {
+    try {
+      await requestJson(
+        `/api/alerts?careGroupId=${encodeURIComponent(activeGroupIdRef.current)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(action),
+        },
+      );
+      await loadAlerts();
+    } catch (error) {
+      toast.add({
+        title: 'No se pudo actualizar la alerta',
+        description:
+          error instanceof Error ? error.message : 'Intentá nuevamente.',
+        type: 'error',
+      });
+    }
+  }
+
+  async function saveAlertPreferences(preferences: AlertPreferences) {
+    const response = await requestJson<{ preferences: AlertPreferences }>(
+      `/api/alerts/preferences?careGroupId=${encodeURIComponent(activeGroupIdRef.current)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(preferences),
+      },
+    );
+    setAlertPreferences(response.preferences);
+    await loadAlerts();
+    toast.add({ title: 'Preferencias guardadas', type: 'success' });
+  }
+
+  async function navigateFromAlert(alert: Alert) {
+    if (alert.personId !== activePersonIdRef.current)
+      await selectPerson(alert.personId);
+    setSection(alert.targetSection);
+  }
+
+  async function downloadCalendar(appointmentId?: string) {
+    const personId = activePersonIdRef.current;
+    if (!personId) return;
+    const params = new URLSearchParams({
+      careGroupId: activeGroupIdRef.current,
+      personId,
+    });
+    if (appointmentId) params.set('appointmentId', appointmentId);
+    try {
+      const response = await authorizedFetch(
+        `/api/calendar/appointments.ics?${params.toString()}`,
+      );
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new ApiError(
+          payload.error || 'No se pudo exportar el calendario',
+        );
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = appointmentId ? 'cerca-turno.ics' : 'cerca-turnos.ics';
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.add({
+        title: 'No se pudo exportar el calendario',
+        description:
+          error instanceof Error ? error.message : 'Intentá nuevamente.',
+        type: 'error',
+      });
+    }
   }
 
   async function convertDocument(
@@ -556,7 +681,7 @@ function OrganizerContent() {
         data: payload,
       }),
     });
-    await Promise.all([loadPersonData(personId), loadPeople()]);
+    await Promise.all([loadPersonData(personId), loadPeople(), loadAlerts()]);
     toast.add({
       title:
         conversion.source.entity === 'order'
@@ -616,7 +741,7 @@ function OrganizerContent() {
       );
       if (activePersonIdRef.current === deleteTarget.personId)
         await loadPersonData(deleteTarget.personId);
-      await loadPeople();
+      await Promise.all([loadPeople(), loadAlerts()]);
       setDeleteTarget(null);
       toast.add({
         title: 'Registro eliminado',
@@ -887,6 +1012,11 @@ function OrganizerContent() {
                 {header.action}
               </Button>
             )}
+            <AlertBell
+              data={alertsData}
+              onAction={changeAlert}
+              onViewAll={() => setSection('alerts')}
+            />
             <ThemeSwitcher />
             <Button
               variant="outline"
@@ -920,6 +1050,8 @@ function OrganizerContent() {
                   onComplete={(item) =>
                     void update('appointment', item, { status: 'Realizado' })
                   }
+                  onExport={() => void downloadCalendar()}
+                  onExportOne={(item) => void downloadCalendar(item.id)}
                   onDelete={(id) => {
                     const item = data.appointments.find(
                       (value) => value.id === id,
@@ -990,6 +1122,16 @@ function OrganizerContent() {
                   }}
                 />
               )}
+              {section === 'alerts' && alertsData && (
+                <AlertsView
+                  key={`${alertPreferences.appointmentLeadMinutes}-${alertPreferences.taskLeadDays}-${alertPreferences.documentLeadDays}`}
+                  data={alertsData}
+                  preferences={alertPreferences}
+                  onAction={changeAlert}
+                  onNavigate={(alert) => void navigateFromAlert(alert)}
+                  onSavePreferences={saveAlertPreferences}
+                />
+              )}
               {section === 'group' && groupData && (
                 <GroupView
                   data={groupData}
@@ -1028,7 +1170,7 @@ function OrganizerContent() {
           ))}
         <DropdownMenu>
           <DropdownMenuTrigger
-            className={`my-2 flex flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-semibold transition-colors ${['orders', 'prescriptions', 'tasks', 'group'].includes(section) ? 'bg-primary/10 text-primary' : 'text-muted-foreground'}`}
+            className={`my-2 flex flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-semibold transition-colors ${['orders', 'prescriptions', 'tasks', 'alerts', 'group'].includes(section) ? 'bg-primary/10 text-primary' : 'text-muted-foreground'}`}
           >
             <Ellipsis className="size-5" />
             Más
@@ -1039,7 +1181,13 @@ function OrganizerContent() {
               {navItems
                 .filter(({ id }) =>
                   (
-                    ['orders', 'prescriptions', 'tasks', 'group'] as Section[]
+                    [
+                      'orders',
+                      'prescriptions',
+                      'tasks',
+                      'alerts',
+                      'group',
+                    ] as Section[]
                   ).includes(id),
                 )
                 .map(({ id, label, icon: Icon }) => (
@@ -1063,6 +1211,7 @@ function OrganizerContent() {
         }}
         onSave={conversion ? convertDocument : save}
         initialData={conversion?.initialData}
+        canShowToElder={Boolean(activePerson.access)}
       />
       <PersonDialog
         key={`${personDialog.person?.id || 'new'}-${personDialog.open}`}

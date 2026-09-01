@@ -1,5 +1,11 @@
 import { getD1 } from '@/db';
-import type { Appointment, ElderData, Medication, Person } from '@/lib/models';
+import type {
+  Appointment,
+  ElderData,
+  MedicalTask,
+  Medication,
+  Person,
+} from '@/lib/models';
 import { authError, AuthError, requireElder } from '@/lib/server-auth';
 
 export async function GET(request: Request) {
@@ -20,7 +26,7 @@ export async function GET(request: Request) {
         403,
       );
 
-    const [appointments, medications] = await Promise.all([
+    const [appointments, medications, tasks] = await Promise.all([
       db
         .prepare(
           `SELECT id, person_id AS personId, specialty, doctor, date, time,
@@ -37,6 +43,19 @@ export async function GET(request: Request) {
         )
         .bind(person.id)
         .all<Omit<Medication, 'active'> & { active: number }>(),
+      db
+        .prepare(
+          `SELECT id, person_id AS personId, title, due_date AS dueDate,
+             priority, status, notes, visible_to_elder AS visibleToElder, version
+           FROM tasks
+           WHERE person_id = ? AND visible_to_elder = 1
+           ORDER BY CASE status WHEN 'Pendiente' THEN 0 ELSE 1 END,
+             CASE WHEN due_date = '' THEN 1 ELSE 0 END, due_date`,
+        )
+        .bind(person.id)
+        .all<
+          Omit<MedicalTask, 'visibleToElder'> & { visibleToElder: number }
+        >(),
     ]);
 
     return Response.json({
@@ -45,6 +64,10 @@ export async function GET(request: Request) {
       medications: medications.results.map((item) => ({
         ...item,
         active: Boolean(item.active),
+      })),
+      tasks: tasks.results.map((item) => ({
+        ...item,
+        visibleToElder: Boolean(item.visibleToElder),
       })),
     } satisfies ElderData);
   } catch (error) {

@@ -5,6 +5,7 @@ export type Section =
   | 'medications'
   | 'prescriptions'
   | 'tasks'
+  | 'alerts'
   | 'group';
 export type Entity =
   | 'appointment'
@@ -14,7 +15,45 @@ export type Entity =
   | 'task';
 export type MembershipRole = 'admin' | 'member';
 export type UserType = 'caregiver' | 'elder';
-export type ElderSection = 'home' | 'appointments' | 'medications';
+export type ElderSection =
+  | 'home'
+  | 'appointments'
+  | 'medications'
+  | 'tasks'
+  | 'alerts';
+export type AlertKind = 'appointment' | 'task' | 'order' | 'prescription';
+export type AlertState = 'active' | 'snoozed' | 'read';
+export type AlertUrgency = 'upcoming' | 'today' | 'overdue';
+
+export interface AlertPreferences {
+  appointmentLeadMinutes: -1 | 1440 | 2880 | 10080;
+  taskLeadDays: -1 | 0 | 1 | 3;
+  documentLeadDays: -1 | 3 | 7 | 14;
+}
+
+export interface Alert {
+  id: string;
+  kind: AlertKind;
+  entityId: string;
+  personId: string;
+  personName: string;
+  title: string;
+  detail: string;
+  relevantAt: string;
+  targetSection: Extract<
+    Section,
+    'appointments' | 'tasks' | 'orders' | 'prescriptions'
+  >;
+  state: AlertState;
+  urgency: AlertUrgency;
+  readAt: string | null;
+  snoozedUntil: string | null;
+}
+
+export interface AlertsData {
+  alerts: Alert[];
+  unreadCount: number;
+}
 
 export interface AppUser {
   id: string;
@@ -135,6 +174,7 @@ export interface MedicalTask {
   priority: 'Normal' | 'Importante' | 'Urgente';
   status: 'Pendiente' | 'Completado';
   notes: string;
+  visibleToElder: boolean;
   version?: number;
 }
 export interface AppData {
@@ -150,6 +190,7 @@ export interface ElderData {
   person: Pick<Person, 'id' | 'name'>;
   appointments: Appointment[];
   medications: Medication[];
+  tasks: MedicalTask[];
 }
 
 export interface PeopleData {
@@ -166,7 +207,7 @@ export interface BackupDataV1 {
 }
 
 export interface BackupData {
-  schemaVersion: 4;
+  schemaVersion: 5;
   exportedAt: string;
   careGroup: { name: string };
   persons: Omit<Person, 'careGroupId' | 'version' | 'access'>[];

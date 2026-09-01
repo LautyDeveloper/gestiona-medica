@@ -5,6 +5,7 @@ import {
   index,
   uniqueIndex,
   check,
+  primaryKey,
 } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
@@ -48,6 +49,52 @@ export const sessions = sqliteTable(
   (table) => [
     index('idx_sessions_user').on(table.userId),
     index('idx_sessions_expiration').on(table.expiresAt),
+  ],
+);
+
+export const alertPreferences = sqliteTable(
+  'alert_preferences',
+  {
+    userId: text('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    appointmentLeadMinutes: integer('appointment_lead_minutes')
+      .notNull()
+      .default(1440),
+    taskLeadDays: integer('task_lead_days').notNull().default(0),
+    documentLeadDays: integer('document_lead_days').notNull().default(7),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    check(
+      'alert_preferences_appointment_lead_check',
+      sql`${table.appointmentLeadMinutes} IN (-1, 1440, 2880, 10080)`,
+    ),
+    check(
+      'alert_preferences_task_lead_check',
+      sql`${table.taskLeadDays} IN (-1, 0, 1, 3)`,
+    ),
+    check(
+      'alert_preferences_document_lead_check',
+      sql`${table.documentLeadDays} IN (-1, 3, 7, 14)`,
+    ),
+  ],
+);
+
+export const alertStates = sqliteTable(
+  'alert_states',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    alertKey: text('alert_key').notNull(),
+    readAt: text('read_at'),
+    snoozedUntil: text('snoozed_until'),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.alertKey] }),
+    index('idx_alert_states_user_updated').on(table.userId, table.updatedAt),
   ],
 );
 
@@ -191,6 +238,9 @@ export const tasks = sqliteTable(
     priority: text('priority').notNull().default('Normal'),
     status: text('status').notNull().default('Pendiente'),
     notes: text('notes').notNull().default(''),
+    visibleToElder: integer('visible_to_elder', { mode: 'boolean' })
+      .notNull()
+      .default(false),
     version: integer('version').notNull().default(1),
   },
   (table) => [
@@ -206,6 +256,10 @@ export const tasks = sqliteTable(
     check(
       'tasks_status_check',
       sql`${table.status} IN ('Pendiente', 'Completado')`,
+    ),
+    check(
+      'tasks_visible_to_elder_check',
+      sql`${table.visibleToElder} IN (0, 1)`,
     ),
     check('tasks_version_check', sql`${table.version} > 0`),
   ],

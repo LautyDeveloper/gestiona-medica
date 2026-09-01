@@ -101,6 +101,7 @@ describe('filtros de listas', () => {
       priority: 'Normal' as const,
       status: 'Pendiente' as const,
       notes: '',
+      visibleToElder: false,
     };
     render(
       <TasksView

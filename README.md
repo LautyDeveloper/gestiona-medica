@@ -1,8 +1,9 @@
 # Cerca
 
 Cerca es una aplicación familiar para organizar información médica: personas,
-turnos, órdenes, medicamentos, recetas y pendientes. Corre sobre React/Vinext y
-Cloudflare Workers, con una base SQLite compatible con Cloudflare D1.
+turnos, órdenes, medicamentos, recetas, pendientes y alertas de vencimiento.
+Corre sobre React/Vinext y Cloudflare Workers, con una base SQLite compatible
+con Cloudflare D1.
 
 ## Requisitos
 
@@ -71,9 +72,22 @@ request y en cada push a `main`.
 
 ## Respaldos y recuperación
 
-El respaldo actual usa `schemaVersion: 4` y contiene todas las personas y sus
+El respaldo actual usa `schemaVersion: 5` y contiene todas las personas y sus
 registros dentro del grupo familiar seleccionado. La importación también acepta
 versiones anteriores compatibles y las normaliza antes de escribir.
+
+## Alertas y calendario
+
+Las alertas se calculan a partir de turnos próximos, pendientes con fecha y
+órdenes o recetas por vencer. Cada usuario conserva sus propias preferencias,
+lecturas y posposiciones. Las cuentas vinculadas a una persona sólo ven sus
+turnos y los pendientes que el cuidador haya decidido compartir.
+
+La exportación `.ics` permite agregar un turno o la agenda próxima del perfil
+activo a un calendario externo. El archivo incluye únicamente persona,
+especialidad, fecha, hora y lugar; no exporta notas ni indicaciones médicas.
+Estas alertas funcionan mientras se usa Cerca y no son notificaciones push en
+segundo plano.
 
 La restauración es destructiva: reemplaza las personas y la información médica
 del grupo. Antes de restaurar:

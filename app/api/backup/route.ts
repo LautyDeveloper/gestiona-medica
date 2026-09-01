@@ -86,7 +86,7 @@ export async function GET(request: Request) {
         .all<Prescription>(),
       db
         .prepare(
-          'SELECT t.id, t.person_id AS personId, t.title, t.due_date AS dueDate, t.priority, t.status, t.notes FROM tasks t JOIN persons p ON p.id = t.person_id WHERE p.care_group_id = ? ORDER BY t.person_id, t.due_date',
+          'SELECT t.id, t.person_id AS personId, t.title, t.due_date AS dueDate, t.priority, t.status, t.notes, t.visible_to_elder AS visibleToElder FROM tasks t JOIN persons p ON p.id = t.person_id WHERE p.care_group_id = ? ORDER BY t.person_id, t.due_date',
         )
         .bind(careGroupId)
         .all<MedicalTask>(),
@@ -94,7 +94,7 @@ export async function GET(request: Request) {
     if (!people.results.length)
       return jsonError('No hay datos para respaldar', 404);
     const backup: BackupData = {
-      schemaVersion: 4,
+      schemaVersion: 5,
       exportedAt: new Date().toISOString(),
       careGroup: { name: group?.name || 'Grupo familiar' },
       persons: people.results.map((person) => ({
@@ -108,7 +108,10 @@ export async function GET(request: Request) {
         active: Boolean(item.active),
       })),
       prescriptions: prescriptions.results,
-      tasks: tasks.results,
+      tasks: tasks.results.map((item) => ({
+        ...item,
+        visibleToElder: Boolean(item.visibleToElder),
+      })),
     };
     return new Response(JSON.stringify(backup, null, 2), {
       headers: {
@@ -275,11 +278,13 @@ export async function POST(request: Request) {
       ...jsonChunks(tasks).map((chunk) =>
         db
           .prepare(
-            `INSERT INTO tasks (id, person_id, title, due_date, priority, status, notes, version)
+            `INSERT INTO tasks (id, person_id, title, due_date, priority, status, notes, visible_to_elder, version)
              SELECT json_extract(value, '$.id'), json_extract(value, '$.personId'),
                json_extract(value, '$.title'), json_extract(value, '$.dueDate'),
                json_extract(value, '$.priority'), json_extract(value, '$.status'),
-               json_extract(value, '$.notes'), 1 FROM json_each(?)`,
+               json_extract(value, '$.notes'),
+               CASE WHEN json_extract(value, '$.visibleToElder') THEN 1 ELSE 0 END,
+               1 FROM json_each(?)`,
           )
           .bind(chunk),
       ),

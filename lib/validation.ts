@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { BackupData } from '@/lib/models';
 
 const cleanText = (label: string, max: number) =>
   z
@@ -216,6 +217,7 @@ export const taskSchema = z.object({
   priority: z.enum(['Normal', 'Importante', 'Urgente']).default('Normal'),
   status: z.enum(['Pendiente', 'Completado']).default('Pendiente'),
   notes: optionalText(1000),
+  visibleToElder: z.boolean().default(false),
 });
 
 export const entitySchema = z.enum([
@@ -447,27 +449,112 @@ export const backupV4Schema = z
       });
   });
 
+export const backupV5Schema = z
+  .object({
+    schemaVersion: z.literal(5),
+    exportedAt: z.iso.datetime(),
+    careGroup: z.object({ name: cleanText('El nombre del grupo', 120) }),
+    persons: z.array(personBackupSchema).min(1).max(1000),
+    ...backupRecordsSchema,
+    tasks: z.array(taskBackupSchema).max(10000),
+    orders: z.array(orderBackupSchema).max(10000),
+    prescriptions: z.array(prescriptionBackupSchema).max(10000),
+  })
+  .superRefine((backup, context) => {
+    const personIds = backup.persons.map((person) => person.id);
+    if (new Set(personIds).size !== personIds.length)
+      context.addIssue({
+        code: 'custom',
+        message: 'El respaldo contiene personas duplicadas',
+      });
+    const knownPeople = new Set(personIds);
+    const records = [
+      ...backup.appointments,
+      ...backup.orders,
+      ...backup.medications,
+      ...backup.prescriptions,
+      ...backup.tasks,
+    ];
+    if (records.some((record) => !knownPeople.has(record.personId)))
+      context.addIssue({
+        code: 'custom',
+        message:
+          'El respaldo contiene registros asociados a una persona inexistente',
+      });
+    const ids = records.map((record) => record.id);
+    if (new Set(ids).size !== ids.length)
+      context.addIssue({
+        code: 'custom',
+        message: 'El respaldo contiene identificadores duplicados',
+      });
+    const appointments = new Map(
+      backup.appointments.map((item) => [item.id, item.personId]),
+    );
+    const medications = new Map(
+      backup.medications.map((item) => [item.id, item.personId]),
+    );
+    if (
+      backup.orders.some(
+        (item) =>
+          item.appointmentId &&
+          appointments.get(item.appointmentId) !== item.personId,
+      ) ||
+      backup.prescriptions.some(
+        (item) =>
+          item.medicationId &&
+          medications.get(item.medicationId) !== item.personId,
+      )
+    )
+      context.addIssue({
+        code: 'custom',
+        message: 'El respaldo contiene vínculos de documentos inválidos',
+      });
+  });
+
 export const backupImportSchema = z
-  .union([backupV1Schema, backupV2Schema, backupV3Schema, backupV4Schema])
-  .transform((backup) => {
-    if (backup.schemaVersion === 4) return backup;
+  .union([
+    backupV1Schema,
+    backupV2Schema,
+    backupV3Schema,
+    backupV4Schema,
+    backupV5Schema,
+  ])
+  .transform((backup): BackupData => {
+    if (backup.schemaVersion === 5) return backup;
+    if (backup.schemaVersion === 4)
+      return {
+        ...backup,
+        schemaVersion: 5 as const,
+        tasks: backup.tasks.map((task) => ({
+          ...task,
+          visibleToElder: false,
+        })),
+      };
     if (backup.schemaVersion === 3)
       return {
         ...backup,
-        schemaVersion: 4 as const,
+        schemaVersion: 5 as const,
+        tasks: backup.tasks.map((task) => ({
+          ...task,
+          visibleToElder: false,
+        })),
         orders: [],
         prescriptions: [],
       };
     if (backup.schemaVersion === 2)
       return {
         ...backup,
-        schemaVersion: 4 as const,
+        schemaVersion: 5 as const,
+        tasks: backup.tasks.map((task) => ({
+          ...task,
+          visibleToElder: false,
+        })),
         careGroup: { name: 'Grupo restaurado' },
         orders: [],
         prescriptions: [],
       };
     return {
-      schemaVersion: 4 as const,
+      schemaVersion: 5 as const,
       exportedAt: backup.exportedAt,
       careGroup: { name: 'Grupo restaurado' },
       persons: [{ ...backup.person, archived: false }],
@@ -475,7 +562,7 @@ export const backupImportSchema = z
       orders: [],
       medications: backup.medications,
       prescriptions: [],
-      tasks: backup.tasks,
+      tasks: backup.tasks.map((task) => ({ ...task, visibleToElder: false })),
     };
   });
 
