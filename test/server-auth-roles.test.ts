@@ -25,6 +25,7 @@ describe('autorización por tipo de cuenta', () => {
                   username: 'maria',
                   displayName: 'María',
                   userType: 'elder',
+                  lastSeenAt: '2000-01-01T00:00:00.000Z',
                 }
               : null,
           run,
@@ -57,6 +58,7 @@ describe('autorización por tipo de cuenta', () => {
                   username: 'ana',
                   displayName: 'Ana',
                   userType: 'caregiver',
+                  lastSeenAt: '2999-01-01T00:00:00.000Z',
                 }
               : null,
           run: async () => ({ meta: { changes: 1 } }),

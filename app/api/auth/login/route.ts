@@ -2,6 +2,7 @@ import { getD1 } from '@/db';
 import { verifyPassword } from '@/lib/password';
 import { authError, createSession, requireSameOrigin } from '@/lib/server-auth';
 import { loginSchema } from '@/lib/validation';
+import { readJson } from '@/lib/api-response';
 
 const LOCK_MINUTES = 15;
 const IP_ATTEMPT_LIMIT = 20;
@@ -30,7 +31,7 @@ async function rateLimitKey(request: Request) {
 export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
-    const parsed = loginSchema.safeParse(await request.json());
+    const parsed = loginSchema.safeParse(await readJson(request));
     if (!parsed.success)
       return Response.json(
         { error: 'Ingresá usuario y contraseña' },

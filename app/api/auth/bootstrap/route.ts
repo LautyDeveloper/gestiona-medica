@@ -3,6 +3,7 @@ import { getBootstrapStatus } from '@/lib/bootstrap-status';
 import { hashPassword } from '@/lib/password';
 import { authError, createSession, requireSameOrigin } from '@/lib/server-auth';
 import { bootstrapSchema, fieldErrors } from '@/lib/validation';
+import { readJson } from '@/lib/api-response';
 
 export async function GET() {
   try {
@@ -29,7 +30,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
-    const parsed = bootstrapSchema.safeParse(await request.json());
+    const parsed = bootstrapSchema.safeParse(await readJson(request));
     if (!parsed.success)
       return Response.json(
         {

@@ -6,11 +6,8 @@ import {
   fieldErrors,
   medicationSchema,
 } from '@/lib/validation';
-import {
-  authError,
-  requireMembership,
-  requireSameOrigin,
-} from '@/lib/server-auth';
+import { requireMembership, requireSameOrigin } from '@/lib/server-auth';
+import { handleApiError, jsonError, readJson } from '@/lib/api-response';
 
 const conversionSchema = z.object({
   sourceEntity: z.enum(['order', 'prescription']),
@@ -20,10 +17,6 @@ const conversionSchema = z.object({
   version: z.number().int().positive(),
   data: z.unknown(),
 });
-
-function error(message: string, status: number, details?: unknown) {
-  return Response.json({ error: message, details }, { status });
-}
 
 function todayInArgentina() {
   return new Intl.DateTimeFormat('en-CA', {
@@ -37,9 +30,9 @@ function todayInArgentina() {
 export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
-    const body = conversionSchema.safeParse(await request.json());
+    const body = conversionSchema.safeParse(await readJson(request));
     if (!body.success)
-      return error('La conversión solicitada no es válida', 400);
+      return jsonError('La conversión solicitada no es válida', 400);
     await requireMembership(request, body.data.careGroupId);
     const db = getD1();
     const person = await db
@@ -48,7 +41,7 @@ export async function POST(request: Request) {
       )
       .bind(body.data.personId, body.data.careGroupId)
       .first();
-    if (!person) return error('La persona no existe o está archivada', 404);
+    if (!person) return jsonError('La persona no existe o está archivada', 404);
 
     const isOrder = body.data.sourceEntity === 'order';
     const sourceTable = isOrder ? 'medical_orders' : 'prescriptions';
@@ -62,13 +55,14 @@ export async function POST(request: Request) {
         expirationDate: string;
         version: number;
       }>();
-    if (!source) return error('El documento no existe para esta persona', 404);
+    if (!source)
+      return jsonError('El documento no existe para esta persona', 404);
     if (source.status === 'used')
-      return error('Este documento ya fue utilizado', 409);
+      return jsonError('Este documento ya fue utilizado', 409);
     if (source.expirationDate < todayInArgentina())
-      return error('El documento está vencido', 409);
+      return jsonError('El documento está vencido', 409);
     if (source.version !== body.data.version)
-      return error(
+      return jsonError(
         'El documento cambió en otro dispositivo. Recargá e intentá nuevamente.',
         409,
       );
@@ -79,7 +73,7 @@ export async function POST(request: Request) {
     if (isOrder) {
       const parsed = appointmentSchema.safeParse(body.data.data);
       if (!parsed.success)
-        return error(
+        return jsonError(
           'Revisá los campos marcados',
           400,
           fieldErrors(parsed.error),
@@ -131,11 +125,11 @@ export async function POST(request: Request) {
           ),
       ]);
       if (!results[0].meta.changes || !results[1].meta.changes)
-        return error('La orden ya no está disponible para convertir', 409);
+        return jsonError('La orden ya no está disponible para convertir', 409);
     } else {
       const parsed = medicationSchema.safeParse(body.data.data);
       if (!parsed.success)
-        return error(
+        return jsonError(
           'Revisá los campos marcados',
           400,
           fieldErrors(parsed.error),
@@ -185,12 +179,10 @@ export async function POST(request: Request) {
           ),
       ]);
       if (!results[0].meta.changes || !results[1].meta.changes)
-        return error('La receta ya no está disponible para convertir', 409);
+        return jsonError('La receta ya no está disponible para convertir', 409);
     }
     return Response.json({ id: targetId }, { status: 201 });
   } catch (caught) {
-    return caught instanceof Error && 'status' in caught
-      ? authError(caught)
-      : error('No se pudo convertir el documento', 500);
+    return handleApiError(caught, 'No se pudo convertir el documento');
   }
 }

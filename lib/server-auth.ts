@@ -1,15 +1,18 @@
 import { getD1 } from '@/db';
 import type { AppUser, MembershipRole } from '@/lib/models';
+import { handleApiError, HttpError } from '@/lib/api-response';
 
 export const SESSION_COOKIE = 'cerca_session';
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
+const REVOKED_SESSION_RETENTION_SECONDS = 7 * 24 * 60 * 60;
+const LAST_SEEN_INTERVAL_SECONDS = 10 * 60;
 
-export class AuthError extends Error {
+export class AuthError extends HttpError {
   constructor(
     message: string,
     public status = 401,
   ) {
-    super(message);
+    super(message, status);
   }
 }
 
@@ -66,18 +69,29 @@ export async function createSession(request: Request, userId: string) {
   const token = randomToken();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_SECONDS * 1000);
-  await getD1()
-    .prepare(
-      'INSERT INTO sessions (id, user_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?)',
-    )
-    .bind(
-      crypto.randomUUID(),
-      userId,
-      await hashToken(token),
-      now.toISOString(),
-      expiresAt.toISOString(),
-    )
-    .run();
+  const revokedBefore = new Date(
+    now.getTime() - REVOKED_SESSION_RETENTION_SECONDS * 1000,
+  );
+  const db = getD1();
+  await db.batch([
+    db
+      .prepare(
+        `DELETE FROM sessions
+         WHERE expires_at <= ? OR (revoked_at IS NOT NULL AND revoked_at <= ?)`,
+      )
+      .bind(now.toISOString(), revokedBefore.toISOString()),
+    db
+      .prepare(
+        'INSERT INTO sessions (id, user_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .bind(
+        crypto.randomUUID(),
+        userId,
+        await hashToken(token),
+        now.toISOString(),
+        expiresAt.toISOString(),
+      ),
+  ]);
   return sessionCookie(request, token);
 }
 
@@ -85,21 +99,34 @@ export async function requireUser(request: Request): Promise<AppUser> {
   const token = readSessionToken(request);
   if (!token) throw new AuthError('Iniciá sesión para continuar');
   const now = new Date().toISOString();
-  const user = await getD1()
+  const db = getD1();
+  const user = await db
     .prepare(
-      `SELECT u.id, u.username, u.display_name AS displayName, u.user_type AS userType
+      `SELECT u.id, u.username, u.display_name AS displayName, u.user_type AS userType,
+         u.last_seen_at AS lastSeenAt
        FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?
          AND u.user_type IN ('caregiver', 'elder')`,
     )
     .bind(await hashToken(token), now)
-    .first<AppUser>();
+    .first<AppUser & { lastSeenAt: string }>();
   if (!user) throw new AuthError('La sesión venció o no es válida');
-  await getD1()
-    .prepare('UPDATE users SET last_seen_at = ? WHERE id = ?')
-    .bind(now, user.id)
-    .run();
-  return user;
+  const lastSeenCutoff = new Date(
+    Date.now() - LAST_SEEN_INTERVAL_SECONDS * 1000,
+  ).toISOString();
+  if (user.lastSeenAt <= lastSeenCutoff)
+    await db
+      .prepare(
+        'UPDATE users SET last_seen_at = ? WHERE id = ? AND last_seen_at <= ?',
+      )
+      .bind(now, user.id, lastSeenCutoff)
+      .run();
+  return {
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName,
+    userType: user.userType,
+  };
 }
 
 export async function requireCaregiver(request: Request) {
@@ -140,16 +167,5 @@ export async function requireMembership(
 }
 
 export function authError(error: unknown) {
-  if (error instanceof AuthError)
-    return Response.json({ error: error.message }, { status: error.status });
-  console.error(
-    'Authentication request failed',
-    error instanceof Error
-      ? { name: error.name, message: error.message, stack: error.stack }
-      : { type: typeof error },
-  );
-  return Response.json(
-    { error: 'Ocurrió un error inesperado' },
-    { status: 500 },
-  );
+  return handleApiError(error, 'Ocurrió un error inesperado');
 }

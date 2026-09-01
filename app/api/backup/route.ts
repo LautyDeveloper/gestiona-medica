@@ -9,19 +9,12 @@ import type {
   Prescription,
 } from '@/lib/models';
 import { backupImportSchema, fieldErrors } from '@/lib/validation';
-import {
-  authError,
-  requireMembership,
-  requireSameOrigin,
-} from '@/lib/server-auth';
+import { requireMembership, requireSameOrigin } from '@/lib/server-auth';
 import { PayloadTooLargeError, readJsonWithLimit } from '@/lib/request-body';
+import { handleApiError, jsonError } from '@/lib/api-response';
 
 const MAX_BACKUP_BYTES = 5_000_000;
 const JSON_CHUNK_BYTES = 750_000;
-
-function error(message: string, status: number, details?: unknown) {
-  return Response.json({ error: message, details }, { status });
-}
 
 function jsonChunks(items: unknown[]) {
   const encoder = new TextEncoder();
@@ -99,7 +92,7 @@ export async function GET(request: Request) {
         .all<MedicalTask>(),
     ]);
     if (!people.results.length)
-      return error('No hay datos para respaldar', 404);
+      return jsonError('No hay datos para respaldar', 404);
     const backup: BackupData = {
       schemaVersion: 4,
       exportedAt: new Date().toISOString(),
@@ -124,9 +117,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (caught) {
-    return caught instanceof Error && 'status' in caught
-      ? authError(caught)
-      : error('No se pudo crear el respaldo', 500);
+    return handleApiError(caught, 'No se pudo crear el respaldo');
   }
 }
 
@@ -140,7 +131,7 @@ export async function POST(request: Request) {
       await readJsonWithLimit(request, MAX_BACKUP_BYTES),
     );
     if (!parsed.success)
-      return error(
+      return jsonError(
         'El respaldo no es válido o no es compatible',
         400,
         fieldErrors(parsed.error),
@@ -325,13 +316,12 @@ export async function POST(request: Request) {
     return Response.json({ ok: true });
   } catch (caught) {
     if (caught instanceof PayloadTooLargeError)
-      return error('El archivo supera el límite de 5 MB', 413);
+      return jsonError('El archivo supera el límite de 5 MB', 413);
     if (caught instanceof SyntaxError)
-      return error('El archivo no contiene JSON válido', 400);
-    if (caught instanceof Error && 'status' in caught) return authError(caught);
-    return error(
+      return jsonError('El archivo no contiene JSON válido', 400);
+    return handleApiError(
+      caught,
       'No se pudo restaurar el respaldo; tus datos actuales no fueron modificados',
-      500,
     );
   }
 }

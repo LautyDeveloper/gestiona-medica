@@ -7,12 +7,13 @@ import {
   requireUser,
 } from '@/lib/server-auth';
 import { changePasswordSchema, fieldErrors } from '@/lib/validation';
+import { readJson } from '@/lib/api-response';
 
 export async function PATCH(request: Request) {
   try {
     requireSameOrigin(request);
     const user = await requireUser(request);
-    const parsed = changePasswordSchema.safeParse(await request.json());
+    const parsed = changePasswordSchema.safeParse(await readJson(request));
     if (!parsed.success)
       return Response.json(
         { error: 'Revisá las contraseñas', details: fieldErrors(parsed.error) },

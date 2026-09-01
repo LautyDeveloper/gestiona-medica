@@ -1,26 +1,19 @@
 import { getD1 } from '@/db';
 import { personArchiveSchema } from '@/lib/validation';
-import {
-  authError,
-  requireMembership,
-  requireSameOrigin,
-} from '@/lib/server-auth';
-
-function error(message: string, status: number) {
-  return Response.json({ error: message }, { status });
-}
+import { requireMembership, requireSameOrigin } from '@/lib/server-auth';
+import { handleApiError, jsonError, readJson } from '@/lib/api-response';
 
 export async function PATCH(request: Request) {
   try {
     requireSameOrigin(request);
-    const body = (await request.json()) as {
+    const body = (await readJson(request)) as {
       id?: unknown;
       archived?: unknown;
       version?: unknown;
       careGroupId?: string;
     };
     const parsed = personArchiveSchema.safeParse(body);
-    if (!parsed.success) return error('Solicitud inválida', 400);
+    if (!parsed.success) return jsonError('Solicitud inválida', 400);
     await requireMembership(request, body.careGroupId || '');
     const db = getD1();
     const access = parsed.data.archived
@@ -72,11 +65,9 @@ export async function PATCH(request: Request) {
       );
     const [result] = await db.batch(statements);
     if (!result.meta.changes)
-      return error('El perfil cambió en otro dispositivo', 409);
+      return jsonError('El perfil cambió en otro dispositivo', 409);
     return Response.json({ ok: true });
   } catch (caught) {
-    return caught instanceof Error && 'status' in caught
-      ? authError(caught)
-      : error('No se pudo cambiar el estado del perfil', 500);
+    return handleApiError(caught, 'No se pudo cambiar el estado del perfil');
   }
 }
