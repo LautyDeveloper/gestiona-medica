@@ -11,7 +11,11 @@ import type {
   Prescription,
 } from '@/lib/models';
 import { entitySchema, fieldErrors, recordSchemas } from '@/lib/validation';
-import { authError, requireMembership } from '@/lib/server-auth';
+import {
+  authError,
+  requireMembership,
+  requireSameOrigin,
+} from '@/lib/server-auth';
 
 const tables: Record<Entity, string> = {
   appointment: 'appointments',
@@ -119,6 +123,7 @@ export async function GET(request: Request): Promise<Response> {
 
 export async function POST(request: Request): Promise<Response> {
   try {
+    requireSameOrigin(request);
     const body = (await request.json()) as {
       entity?: unknown;
       personId?: unknown;
@@ -261,6 +266,7 @@ export async function POST(request: Request): Promise<Response> {
 
 export async function PATCH(request: Request): Promise<Response> {
   try {
+    requireSameOrigin(request);
     const body = (await request.json()) as {
       entity?: unknown;
       id?: unknown;
@@ -423,6 +429,7 @@ export async function PATCH(request: Request): Promise<Response> {
 
 export async function DELETE(request: Request): Promise<Response> {
   try {
+    requireSameOrigin(request);
     const url = new URL(request.url);
     const entityResult = entitySchema.safeParse(url.searchParams.get('entity'));
     const idResult = z.uuid().safeParse(url.searchParams.get('id'));

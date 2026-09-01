@@ -7,7 +7,11 @@ import {
   personSchema,
 } from '@/lib/validation';
 import { hashPassword } from '@/lib/password';
-import { authError, requireMembership } from '@/lib/server-auth';
+import {
+  authError,
+  requireMembership,
+  requireSameOrigin,
+} from '@/lib/server-auth';
 
 function error(message: string, status: number, details?: unknown) {
   return Response.json({ error: message, details }, { status });
@@ -61,6 +65,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    requireSameOrigin(request);
     const parsed = createPersonSchema.safeParse(await request.json());
     if (!parsed.success)
       return error(
@@ -137,6 +142,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    requireSameOrigin(request);
     const body = (await request.json()) as {
       id?: unknown;
       careGroupId?: string;

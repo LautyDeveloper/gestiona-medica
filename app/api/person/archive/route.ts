@@ -1,6 +1,10 @@
 import { getD1 } from '@/db';
 import { personArchiveSchema } from '@/lib/validation';
-import { authError, requireMembership } from '@/lib/server-auth';
+import {
+  authError,
+  requireMembership,
+  requireSameOrigin,
+} from '@/lib/server-auth';
 
 function error(message: string, status: number) {
   return Response.json({ error: message }, { status });
@@ -8,6 +12,7 @@ function error(message: string, status: number) {
 
 export async function PATCH(request: Request) {
   try {
+    requireSameOrigin(request);
     const body = (await request.json()) as {
       id?: unknown;
       archived?: unknown;

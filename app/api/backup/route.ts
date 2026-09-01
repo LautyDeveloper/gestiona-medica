@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import { getD1 } from '@/db';
 import type {
   Appointment,
@@ -10,10 +9,37 @@ import type {
   Prescription,
 } from '@/lib/models';
 import { backupImportSchema, fieldErrors } from '@/lib/validation';
-import { authError, requireMembership } from '@/lib/server-auth';
+import {
+  authError,
+  requireMembership,
+  requireSameOrigin,
+} from '@/lib/server-auth';
+import { PayloadTooLargeError, readJsonWithLimit } from '@/lib/request-body';
+
+const MAX_BACKUP_BYTES = 5_000_000;
+const JSON_CHUNK_BYTES = 750_000;
 
 function error(message: string, status: number, details?: unknown) {
-  return NextResponse.json({ error: message, details }, { status });
+  return Response.json({ error: message, details }, { status });
+}
+
+function jsonChunks(items: unknown[]) {
+  const encoder = new TextEncoder();
+  const chunks: string[] = [];
+  let chunk: unknown[] = [];
+  let chunkBytes = 2;
+  for (const item of items) {
+    const itemBytes = encoder.encode(JSON.stringify(item)).byteLength;
+    if (chunk.length && chunkBytes + itemBytes + 1 > JSON_CHUNK_BYTES) {
+      chunks.push(JSON.stringify(chunk));
+      chunk = [];
+      chunkBytes = 2;
+    }
+    chunk.push(item);
+    chunkBytes += itemBytes + (chunk.length > 1 ? 1 : 0);
+  }
+  if (chunk.length) chunks.push(JSON.stringify(chunk));
+  return chunks;
 }
 
 export async function GET(request: Request) {
@@ -91,7 +117,7 @@ export async function GET(request: Request) {
       prescriptions: prescriptions.results,
       tasks: tasks.results,
     };
-    return new NextResponse(JSON.stringify(backup, null, 2), {
+    return new Response(JSON.stringify(backup, null, 2), {
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
         'Content-Disposition': `attachment; filename="cerca-respaldo-${new Date().toISOString().slice(0, 10)}.json"`,
@@ -106,13 +132,13 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    requireSameOrigin(request);
     const careGroupId =
       new URL(request.url).searchParams.get('careGroupId') || '';
     await requireMembership(request, careGroupId, 'admin');
-    const contentLength = Number(request.headers.get('content-length') || 0);
-    if (contentLength > 5_000_000)
-      return error('El archivo supera el límite de 5 MB', 400);
-    const parsed = backupImportSchema.safeParse(await request.json());
+    const parsed = backupImportSchema.safeParse(
+      await readJsonWithLimit(request, MAX_BACKUP_BYTES),
+    );
     if (!parsed.success)
       return error(
         'El respaldo no es válido o no es compatible',
@@ -130,7 +156,43 @@ export async function POST(request: Request) {
     const medicationIds = new Map(
       backup.medications.map((item) => [item.id, crypto.randomUUID()]),
     );
-    await db.batch([
+    const people = backup.persons.map((person) => ({
+      ...person,
+      id: personIds.get(person.id),
+    }));
+    const appointments = backup.appointments.map((item) => ({
+      ...item,
+      id: appointmentIds.get(item.id),
+      personId: personIds.get(item.personId),
+    }));
+    const medications = backup.medications.map((item) => ({
+      ...item,
+      id: medicationIds.get(item.id),
+      personId: personIds.get(item.personId),
+    }));
+    const tasks = backup.tasks.map((item) => ({
+      ...item,
+      id: crypto.randomUUID(),
+      personId: personIds.get(item.personId),
+    }));
+    const orders = backup.orders.map((item) => ({
+      ...item,
+      id: crypto.randomUUID(),
+      personId: personIds.get(item.personId),
+      appointmentId: item.appointmentId
+        ? appointmentIds.get(item.appointmentId) || null
+        : null,
+    }));
+    const prescriptions = backup.prescriptions.map((item) => ({
+      ...item,
+      id: crypto.randomUUID(),
+      personId: personIds.get(item.personId),
+      medicationId: item.medicationId
+        ? medicationIds.get(item.medicationId) || null
+        : null,
+    }));
+
+    const statements = [
       db
         .prepare(
           `DELETE FROM sessions WHERE user_id IN (
@@ -183,119 +245,89 @@ export async function POST(request: Request) {
       db
         .prepare('DELETE FROM persons WHERE care_group_id = ?')
         .bind(careGroupId),
-      ...backup.persons.map((person) =>
+      ...jsonChunks(people).map((chunk) =>
         db
           .prepare(
-            'INSERT INTO persons (id, care_group_id, name, birth_date, relationship, notes, archived, version) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
+            `INSERT INTO persons (id, care_group_id, name, birth_date, relationship, notes, archived, version)
+             SELECT json_extract(value, '$.id'), ?, json_extract(value, '$.name'),
+               json_extract(value, '$.birthDate'), json_extract(value, '$.relationship'),
+               json_extract(value, '$.notes'), CASE WHEN json_extract(value, '$.archived') THEN 1 ELSE 0 END, 1
+             FROM json_each(?)`,
           )
-          .bind(
-            personIds.get(person.id),
-            careGroupId,
-            person.name,
-            person.birthDate,
-            person.relationship,
-            person.notes,
-            person.archived ? 1 : 0,
-          ),
+          .bind(careGroupId, chunk),
       ),
-      ...backup.appointments.map((item) =>
+      ...jsonChunks(appointments).map((chunk) =>
         db
           .prepare(
-            'INSERT INTO appointments (id, person_id, specialty, doctor, date, time, place, bring, notes, status, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
+            `INSERT INTO appointments (id, person_id, specialty, doctor, date, time, place, bring, notes, status, version)
+             SELECT json_extract(value, '$.id'), json_extract(value, '$.personId'),
+               json_extract(value, '$.specialty'), json_extract(value, '$.doctor'),
+               json_extract(value, '$.date'), json_extract(value, '$.time'),
+               json_extract(value, '$.place'), json_extract(value, '$.bring'),
+               json_extract(value, '$.notes'), json_extract(value, '$.status'), 1
+             FROM json_each(?)`,
           )
-          .bind(
-            appointmentIds.get(item.id),
-            personIds.get(item.personId),
-            item.specialty,
-            item.doctor,
-            item.date,
-            item.time,
-            item.place,
-            item.bring,
-            item.notes,
-            item.status,
-          ),
+          .bind(chunk),
       ),
-      ...backup.medications.map((item) =>
+      ...jsonChunks(medications).map((chunk) =>
         db
           .prepare(
-            'INSERT INTO medications (id, person_id, name, dose, frequency, doctor, notes, active, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)',
+            `INSERT INTO medications (id, person_id, name, dose, frequency, doctor, notes, active, version)
+             SELECT json_extract(value, '$.id'), json_extract(value, '$.personId'),
+               json_extract(value, '$.name'), json_extract(value, '$.dose'),
+               json_extract(value, '$.frequency'), json_extract(value, '$.doctor'),
+               json_extract(value, '$.notes'), CASE WHEN json_extract(value, '$.active') THEN 1 ELSE 0 END, 1
+             FROM json_each(?)`,
           )
-          .bind(
-            medicationIds.get(item.id),
-            personIds.get(item.personId),
-            item.name,
-            item.dose,
-            item.frequency,
-            item.doctor,
-            item.notes,
-            item.active ? 1 : 0,
-          ),
+          .bind(chunk),
       ),
-      ...backup.tasks.map((item) =>
+      ...jsonChunks(tasks).map((chunk) =>
         db
           .prepare(
-            'INSERT INTO tasks (id, person_id, title, due_date, priority, status, notes, version) VALUES (?, ?, ?, ?, ?, ?, ?, 1)',
+            `INSERT INTO tasks (id, person_id, title, due_date, priority, status, notes, version)
+             SELECT json_extract(value, '$.id'), json_extract(value, '$.personId'),
+               json_extract(value, '$.title'), json_extract(value, '$.dueDate'),
+               json_extract(value, '$.priority'), json_extract(value, '$.status'),
+               json_extract(value, '$.notes'), 1 FROM json_each(?)`,
           )
-          .bind(
-            crypto.randomUUID(),
-            personIds.get(item.personId),
-            item.title,
-            item.dueDate,
-            item.priority,
-            item.status,
-            item.notes,
-          ),
+          .bind(chunk),
       ),
-      ...backup.orders.map((item) =>
+      ...jsonChunks(orders).map((chunk) =>
         db
           .prepare(
-            'INSERT INTO medical_orders (id, person_id, specialty, reason, requested_by, issue_date, expiration_date, notes, status, appointment_id, used_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
+            `INSERT INTO medical_orders (id, person_id, specialty, reason, requested_by, issue_date, expiration_date, notes, status, appointment_id, used_at, version)
+             SELECT json_extract(value, '$.id'), json_extract(value, '$.personId'),
+               json_extract(value, '$.specialty'), json_extract(value, '$.reason'),
+               json_extract(value, '$.requestedBy'), json_extract(value, '$.issueDate'),
+               json_extract(value, '$.expirationDate'), json_extract(value, '$.notes'),
+               json_extract(value, '$.status'), json_extract(value, '$.appointmentId'),
+               json_extract(value, '$.usedAt'), 1 FROM json_each(?)`,
           )
-          .bind(
-            crypto.randomUUID(),
-            personIds.get(item.personId),
-            item.specialty,
-            item.reason,
-            item.requestedBy,
-            item.issueDate,
-            item.expirationDate,
-            item.notes,
-            item.status,
-            item.appointmentId
-              ? appointmentIds.get(item.appointmentId) || null
-              : null,
-            item.usedAt,
-          ),
+          .bind(chunk),
       ),
-      ...backup.prescriptions.map((item) =>
+      ...jsonChunks(prescriptions).map((chunk) =>
         db
           .prepare(
-            'INSERT INTO prescriptions (id, person_id, medication_name, presentation, dose, frequency, duration, prescribed_by, issue_date, expiration_date, notes, status, medication_id, used_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)',
+            `INSERT INTO prescriptions (id, person_id, medication_name, presentation, dose, frequency, duration, prescribed_by, issue_date, expiration_date, notes, status, medication_id, used_at, version)
+             SELECT json_extract(value, '$.id'), json_extract(value, '$.personId'),
+               json_extract(value, '$.medicationName'), json_extract(value, '$.presentation'),
+               json_extract(value, '$.dose'), json_extract(value, '$.frequency'),
+               json_extract(value, '$.duration'), json_extract(value, '$.prescribedBy'),
+               json_extract(value, '$.issueDate'), json_extract(value, '$.expirationDate'),
+               json_extract(value, '$.notes'), json_extract(value, '$.status'),
+               json_extract(value, '$.medicationId'), json_extract(value, '$.usedAt'), 1
+             FROM json_each(?)`,
           )
-          .bind(
-            crypto.randomUUID(),
-            personIds.get(item.personId),
-            item.medicationName,
-            item.presentation,
-            item.dose,
-            item.frequency,
-            item.duration,
-            item.prescribedBy,
-            item.issueDate,
-            item.expirationDate,
-            item.notes,
-            item.status,
-            item.medicationId
-              ? medicationIds.get(item.medicationId) || null
-              : null,
-            item.usedAt,
-          ),
+          .bind(chunk),
       ),
-    ]);
-    await db.prepare('PRAGMA optimize').run();
-    return NextResponse.json({ ok: true });
+    ];
+    await db.batch(statements);
+    return Response.json({ ok: true });
   } catch (caught) {
+    if (caught instanceof PayloadTooLargeError)
+      return error('El archivo supera el límite de 5 MB', 413);
+    if (caught instanceof SyntaxError)
+      return error('El archivo no contiene JSON válido', 400);
     if (caught instanceof Error && 'status' in caught) return authError(caught);
     return error(
       'No se pudo restaurar el respaldo; tus datos actuales no fueron modificados',

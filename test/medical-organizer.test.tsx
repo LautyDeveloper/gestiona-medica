@@ -119,9 +119,15 @@ describe('organizador multi-persona', () => {
     expect(await screen.findByText('Hola, Ana')).toBeInTheDocument();
     await waitFor(() =>
       expect(
-        fetchMock.mock.calls.some(([input]) =>
-          String(input).startsWith('/api/groups?'),
-        ),
+        fetchMock.mock.calls.some(([input]) => {
+          const url =
+            typeof input === 'string'
+              ? input
+              : input instanceof URL
+                ? input.href
+                : input.url;
+          return url.startsWith('/api/groups?');
+        }),
       ).toBe(true),
     );
     const callsAfterLoad = fetchMock.mock.calls.length;
