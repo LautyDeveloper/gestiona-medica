@@ -1,6 +1,10 @@
 import { getD1 } from '@/db';
 import { hashPassword } from '@/lib/password';
-import { authError, requireMembership } from '@/lib/server-auth';
+import {
+  authError,
+  requireMembership,
+  requireSameOrigin,
+} from '@/lib/server-auth';
 import {
   createPersonAccessSchema,
   deletePersonAccessSchema,
@@ -28,6 +32,7 @@ async function target(personId: string, careGroupId: string) {
 
 export async function POST(request: Request) {
   try {
+    requireSameOrigin(request);
     const parsed = createPersonAccessSchema.safeParse(await request.json());
     if (!parsed.success) return invalid(parsed.error);
     await requireMembership(request, parsed.data.careGroupId, 'admin');
@@ -90,6 +95,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    requireSameOrigin(request);
     const parsed = updatePersonAccessSchema.safeParse(await request.json());
     if (!parsed.success) return invalid(parsed.error);
     await requireMembership(request, parsed.data.careGroupId, 'admin');
@@ -143,6 +149,7 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    requireSameOrigin(request);
     const parsed = deletePersonAccessSchema.safeParse(await request.json());
     if (!parsed.success) return invalid(parsed.error);
     await requireMembership(request, parsed.data.careGroupId, 'admin');

@@ -51,6 +51,59 @@ describe('validaciones', () => {
         bring: '',
       }).success,
     ).toBe(false));
+  it('rechaza fechas de calendario imposibles en todos los registros', () => {
+    expect(
+      personSchema.safeParse({
+        name: 'Ana',
+        birthDate: '2025-02-29',
+        relationship: 'Madre',
+        notes: '',
+      }).success,
+    ).toBe(false);
+    expect(
+      appointmentSchema.safeParse({
+        specialty: 'Cardiología',
+        doctor: 'Dra. Pérez',
+        date: '2026-02-31',
+        time: '10:00',
+        place: 'Hospital',
+        bring: 'DNI',
+        notes: '',
+      }).success,
+    ).toBe(false);
+    expect(
+      orderSchema.safeParse({
+        specialty: 'Cardiología',
+        reason: 'Control',
+        requestedBy: 'Dra. Pérez',
+        issueDate: '2026-13-01',
+        expirationDate: '2027-01-01',
+        notes: '',
+      }).success,
+    ).toBe(false);
+    expect(
+      prescriptionSchema.safeParse({
+        medicationName: 'Losartán',
+        presentation: 'Comprimidos',
+        dose: '50 mg',
+        frequency: 'Diario',
+        duration: '30 días',
+        prescribedBy: 'Dra. Pérez',
+        issueDate: '2026-01-01',
+        expirationDate: '2026-04-31',
+        notes: '',
+      }).success,
+    ).toBe(false);
+    expect(
+      taskSchema.safeParse({
+        title: 'Pedir receta',
+        dueDate: '2026-99-01',
+        priority: 'Normal',
+        status: 'Pendiente',
+        notes: '',
+      }).success,
+    ).toBe(false);
+  });
   it('acepta y normaliza horas de 24 horas y expresiones am/pm', () => {
     const appointment = {
       specialty: 'Cardiología',

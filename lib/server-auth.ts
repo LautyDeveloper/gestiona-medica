@@ -13,6 +13,16 @@ export class AuthError extends Error {
   }
 }
 
+export function requireSameOrigin(request: Request) {
+  const fetchSite = request.headers.get('sec-fetch-site');
+  if (fetchSite === 'cross-site')
+    throw new AuthError('La solicitud proviene de un sitio no autorizado', 403);
+
+  const origin = request.headers.get('origin');
+  if (origin && origin !== new URL(request.url).origin)
+    throw new AuthError('La solicitud proviene de un sitio no autorizado', 403);
+}
+
 function randomToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   let binary = '';

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/db', () => ({ getD1: mocks.getD1 }));
 vi.mock('@/lib/server-auth', () => ({
   requireMembership: mocks.requireMembership,
+  requireSameOrigin: () => {},
   authError: () => Response.json({ error: 'Auth' }, { status: 401 }),
 }));
 

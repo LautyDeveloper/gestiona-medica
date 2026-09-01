@@ -1,6 +1,10 @@
 import { getD1 } from '@/db';
 import { hashPassword } from '@/lib/password';
-import { authError, requireMembership } from '@/lib/server-auth';
+import {
+  authError,
+  requireMembership,
+  requireSameOrigin,
+} from '@/lib/server-auth';
 import {
   createUserSchema,
   fieldErrors,
@@ -9,6 +13,7 @@ import {
 
 export async function POST(request: Request) {
   try {
+    requireSameOrigin(request);
     const parsed = createUserSchema.safeParse(await request.json());
     if (!parsed.success)
       return Response.json(
@@ -66,6 +71,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    requireSameOrigin(request);
     const parsed = resetPasswordSchema.safeParse(await request.json());
     if (!parsed.success)
       return Response.json(

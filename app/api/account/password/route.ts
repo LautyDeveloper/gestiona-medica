@@ -3,12 +3,14 @@ import { hashPassword, verifyPassword } from '@/lib/password';
 import {
   authError,
   clearSessionCookie,
+  requireSameOrigin,
   requireUser,
 } from '@/lib/server-auth';
 import { changePasswordSchema, fieldErrors } from '@/lib/validation';
 
 export async function PATCH(request: Request) {
   try {
+    requireSameOrigin(request);
     const user = await requireUser(request);
     const parsed = changePasswordSchema.safeParse(await request.json());
     if (!parsed.success)

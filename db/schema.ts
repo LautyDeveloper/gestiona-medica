@@ -39,8 +39,18 @@ export const sessions = sqliteTable(
     expiresAt: text('expires_at').notNull(),
     revokedAt: text('revoked_at'),
   },
-  (table) => [index('idx_sessions_user').on(table.userId)],
+  (table) => [
+    index('idx_sessions_user').on(table.userId),
+    index('idx_sessions_expiration').on(table.expiresAt),
+  ],
 );
+
+export const loginRateLimits = sqliteTable('login_rate_limits', {
+  keyHash: text('key_hash').primaryKey(),
+  attemptCount: integer('attempt_count').notNull().default(0),
+  windowStartedAt: text('window_started_at').notNull(),
+  blockedUntil: text('blocked_until'),
+});
 
 export const careGroups = sqliteTable('care_groups', {
   id: text('id').primaryKey(),

@@ -1,7 +1,7 @@
 import { getD1 } from '@/db';
 import { getBootstrapStatus } from '@/lib/bootstrap-status';
 import { hashPassword } from '@/lib/password';
-import { authError, createSession } from '@/lib/server-auth';
+import { authError, createSession, requireSameOrigin } from '@/lib/server-auth';
 import { bootstrapSchema, fieldErrors } from '@/lib/validation';
 
 export async function GET() {
@@ -28,6 +28,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    requireSameOrigin(request);
     const parsed = bootstrapSchema.safeParse(await request.json());
     if (!parsed.success)
       return Response.json(

@@ -6,7 +6,11 @@ import {
   fieldErrors,
   medicationSchema,
 } from '@/lib/validation';
-import { authError, requireMembership } from '@/lib/server-auth';
+import {
+  authError,
+  requireMembership,
+  requireSameOrigin,
+} from '@/lib/server-auth';
 
 const conversionSchema = z.object({
   sourceEntity: z.enum(['order', 'prescription']),
@@ -32,6 +36,7 @@ function todayInArgentina() {
 
 export async function POST(request: Request) {
   try {
+    requireSameOrigin(request);
     const body = conversionSchema.safeParse(await request.json());
     if (!body.success)
       return error('La conversión solicitada no es válida', 400);

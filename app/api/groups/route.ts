@@ -1,6 +1,10 @@
 import { getD1 } from '@/db';
 import type { CareGroup, GroupData, GroupMember } from '@/lib/models';
-import { authError, requireMembership } from '@/lib/server-auth';
+import {
+  authError,
+  requireMembership,
+  requireSameOrigin,
+} from '@/lib/server-auth';
 import { careGroupSchema } from '@/lib/validation';
 
 export async function GET(request: Request) {
@@ -52,6 +56,7 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    requireSameOrigin(request);
     const body = (await request.json()) as { id?: string; name?: string };
     await requireMembership(request, body.id || '', 'admin');
     const parsed = careGroupSchema.safeParse({ name: body.name });
