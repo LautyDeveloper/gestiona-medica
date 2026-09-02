@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MedicalOrganizer } from '@/components/medical-organizer';
@@ -189,9 +189,11 @@ describe('organizador multi-persona', () => {
     expect(await screen.findByText('Hola, Ana')).toBeInTheDocument();
 
     const more = screen.getByRole('button', { name: 'Más' });
-    more.focus();
-    fireEvent.keyDown(more, { key: 'ArrowUp' });
-    await userEvent.click(screen.getByRole('menuitem', { name: 'Órdenes' }));
+    await userEvent.click(more);
+    const ordersItem = await screen.findByRole('menuitem', {
+      name: 'Órdenes',
+    });
+    await userEvent.click(ordersItem);
 
     expect(
       screen.getByRole('heading', { name: 'Órdenes' }),
