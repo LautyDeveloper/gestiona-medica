@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   CalendarDays,
   CalendarPlus,
@@ -12,6 +13,7 @@ import {
   Pill,
   Trash2,
   Download,
+  PackagePlus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -377,16 +379,21 @@ export function MedicationsView({
   onNew,
   onEdit,
   onDelete,
+  onRestock,
+  today,
 }: {
   items: Medication[];
   onNew: () => void;
   onEdit: EditFn;
   onDelete: (id: string) => void;
+  onRestock?: (item: Medication) => void;
+  today?: ReactNode;
 }) {
   const [filter, setFilter] = useState<'active' | 'inactive'>('active');
   const visible = items.filter((item) => item.active === (filter === 'active'));
   return (
     <div className="page-rise space-y-4">
+      {today}
       <FilterBar
         values={[
           {
@@ -433,6 +440,29 @@ export function MedicationsView({
             <p className="mt-1 text-sm font-semibold text-medication">
               {item.dose} · {item.frequency}
             </p>
+            {item.scheduleType === 'fixed_times' && (
+              <p className="mt-2 text-sm">
+                Horarios confirmados: {item.scheduleTimes.join(', ')}
+              </p>
+            )}
+            {item.scheduleType === 'interval' && item.intervalMinutes && (
+              <p className="mt-2 text-sm">
+                Cada {item.intervalMinutes / 60} horas
+              </p>
+            )}
+            {item.scheduleType === 'as_needed' && (
+              <p className="mt-2 text-sm">Según necesidad</p>
+            )}
+            {item.scheduleType === 'unstructured' && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Plan de tomas sin estructurar
+              </p>
+            )}
+            {item.stockQuantity !== null && (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Cantidad estimada: {item.stockQuantity} {item.stockUnit}
+              </p>
+            )}
             <p className="mt-3 text-sm text-muted-foreground">
               Indicado por {item.doctor}
             </p>
@@ -440,6 +470,11 @@ export function MedicationsView({
               <p className="mt-2 text-sm text-muted-foreground">{item.notes}</p>
             )}
             <div className="mt-auto flex justify-end gap-1 pt-5">
+              {onRestock && item.stockUnit && (
+                <Button variant="ghost" onClick={() => onRestock(item)}>
+                  <PackagePlus /> Reponer
+                </Button>
+              )}
               <Button variant="ghost" onClick={() => onEdit(item)}>
                 <Pencil />
                 Editar

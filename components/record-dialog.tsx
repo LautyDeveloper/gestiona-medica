@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Plus, Trash2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -68,6 +69,18 @@ const emptyValues: Record<Entity, Record<string, unknown>> = {
     doctor: '',
     notes: '',
     active: true,
+    scheduleType: 'unstructured',
+    scheduleTimes: [],
+    startDate: '',
+    endDate: '',
+    intervalMinutes: null,
+    intervalAnchorAt: '',
+    presentation: '',
+    stockUnit: '',
+    unitsPerIntake: null,
+    stockQuantity: null,
+    reorderThreshold: null,
+    stockCycle: 1,
   },
   prescription: {
     medicationName: '',
@@ -183,6 +196,11 @@ export function RecordDialog({
     setForm((current) => ({ ...current, [key]: next }));
   const text = (key: string) =>
     typeof form[key] === 'string' ? (form[key] as string) : '';
+  const number = (key: string) =>
+    typeof form[key] === 'number' ? (form[key] as number) : null;
+  const scheduleTimes = Array.isArray(form.scheduleTimes)
+    ? (form.scheduleTimes as string[])
+    : [];
 
   async function submit(event: { preventDefault: () => void }) {
     event.preventDefault();
@@ -410,6 +428,282 @@ export function RecordDialog({
                   placeholder="Ej. Dr. Gómez"
                 />
               </Field>
+              <div className="rounded-2xl border bg-muted/20 p-4">
+                <h3 className="font-semibold">Plan de tomas</h3>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  Confirmá los horarios manualmente. Cerca no interpreta la
+                  frecuencia escrita ni recomienda una pauta.
+                </p>
+                <div className="mt-4 grid gap-4">
+                  <Field label="Tipo de plan" error={errors.scheduleType}>
+                    <NativeSelect
+                      value={text('scheduleType')}
+                      onChange={(event) => {
+                        const next = event.target.value;
+                        setForm((current) => ({
+                          ...current,
+                          scheduleType: next,
+                          scheduleTimes:
+                            next === 'fixed_times'
+                              ? scheduleTimes.length
+                                ? scheduleTimes
+                                : ['08:00']
+                              : [],
+                          intervalMinutes:
+                            next === 'interval'
+                              ? number('intervalMinutes') || 480
+                              : null,
+                          intervalAnchorAt:
+                            next === 'interval'
+                              ? text('intervalAnchorAt') || `${today}T08:00`
+                              : '',
+                          startDate:
+                            next === 'unstructured'
+                              ? ''
+                              : text('startDate') || today,
+                        }));
+                      }}
+                    >
+                      <NativeSelectOption value="unstructured">
+                        Sin estructurar
+                      </NativeSelectOption>
+                      <NativeSelectOption value="fixed_times">
+                        Horarios fijos
+                      </NativeSelectOption>
+                      <NativeSelectOption value="interval">
+                        Cada determinada cantidad de horas
+                      </NativeSelectOption>
+                      <NativeSelectOption value="as_needed">
+                        Según necesidad
+                      </NativeSelectOption>
+                    </NativeSelect>
+                  </Field>
+                  {text('scheduleType') !== 'unstructured' && (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field
+                        label="Fecha de inicio"
+                        required
+                        error={errors.startDate}
+                      >
+                        <Input
+                          required
+                          type="date"
+                          value={text('startDate')}
+                          onChange={(event) =>
+                            update('startDate', event.target.value)
+                          }
+                        />
+                      </Field>
+                      <Field label="Fecha de fin" error={errors.endDate}>
+                        <Input
+                          type="date"
+                          min={text('startDate') || undefined}
+                          value={text('endDate')}
+                          onChange={(event) =>
+                            update('endDate', event.target.value)
+                          }
+                        />
+                      </Field>
+                    </div>
+                  )}
+                  {text('scheduleType') === 'fixed_times' && (
+                    <div className="grid gap-2">
+                      <span className="text-sm font-medium">
+                        Horarios confirmados
+                      </span>
+                      {scheduleTimes.map((time, index) => (
+                        <div key={index} className="flex gap-2">
+                          <Input
+                            aria-label={`Horario ${index + 1}`}
+                            type="time"
+                            value={time}
+                            onChange={(event) =>
+                              update(
+                                'scheduleTimes',
+                                scheduleTimes.map((current, position) =>
+                                  position === index
+                                    ? event.target.value
+                                    : current,
+                                ),
+                              )
+                            }
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Eliminar horario ${index + 1}`}
+                            onClick={() =>
+                              update(
+                                'scheduleTimes',
+                                scheduleTimes.filter(
+                                  (_, position) => position !== index,
+                                ),
+                              )
+                            }
+                          >
+                            <Trash2 />
+                          </Button>
+                        </div>
+                      ))}
+                      {errors.scheduleTimes && (
+                        <span className="text-xs text-destructive">
+                          {errors.scheduleTimes}
+                        </span>
+                      )}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-fit"
+                        disabled={scheduleTimes.length >= 12}
+                        onClick={() =>
+                          update('scheduleTimes', [
+                            ...scheduleTimes,
+                            scheduleTimes.at(-1) || '08:00',
+                          ])
+                        }
+                      >
+                        <Plus /> Agregar horario
+                      </Button>
+                    </div>
+                  )}
+                  {text('scheduleType') === 'interval' && (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field
+                        label="Cada cuántas horas"
+                        required
+                        error={errors.intervalMinutes}
+                      >
+                        <Input
+                          required
+                          type="number"
+                          min="0.5"
+                          max="168"
+                          step="0.5"
+                          value={
+                            number('intervalMinutes') === null
+                              ? ''
+                              : number('intervalMinutes')! / 60
+                          }
+                          onChange={(event) =>
+                            update(
+                              'intervalMinutes',
+                              event.target.value
+                                ? Number(event.target.value) * 60
+                                : null,
+                            )
+                          }
+                        />
+                      </Field>
+                      <Field
+                        label="Calcular desde"
+                        required
+                        error={errors.intervalAnchorAt}
+                      >
+                        <Input
+                          required
+                          type="datetime-local"
+                          value={text('intervalAnchorAt')}
+                          onChange={(event) =>
+                            update('intervalAnchorAt', event.target.value)
+                          }
+                        />
+                      </Field>
+                    </div>
+                  )}
+                  {text('scheduleType') === 'as_needed' && (
+                    <p className="rounded-xl bg-primary/8 p-3 text-sm text-muted-foreground">
+                      No se crearán horarios esperados. Las tomas se registran
+                      manualmente cuando ocurren.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-2xl border bg-muted/20 p-4">
+                <h3 className="font-semibold">Presentación y reposición</h3>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  El stock es una estimación y nunca condiciona el registro de
+                  una toma.
+                </p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <Field label="Presentación" error={errors.presentation}>
+                    <Input
+                      value={text('presentation')}
+                      onChange={(event) =>
+                        update('presentation', event.target.value)
+                      }
+                      placeholder="Ej. Caja de 30 comprimidos"
+                    />
+                  </Field>
+                  <Field label="Unidad de stock" error={errors.stockUnit}>
+                    <Input
+                      value={text('stockUnit')}
+                      onChange={(event) =>
+                        update('stockUnit', event.target.value)
+                      }
+                      placeholder="Ej. comprimidos, ml o dosis"
+                    />
+                  </Field>
+                  <Field
+                    label="Cantidad por toma"
+                    error={errors.unitsPerIntake}
+                  >
+                    <Input
+                      type="number"
+                      min="0.001"
+                      step="0.001"
+                      value={number('unitsPerIntake') ?? ''}
+                      onChange={(event) =>
+                        update(
+                          'unitsPerIntake',
+                          event.target.value
+                            ? Number(event.target.value)
+                            : null,
+                        )
+                      }
+                    />
+                  </Field>
+                  <Field
+                    label={value ? 'Cantidad estimada' : 'Cantidad inicial'}
+                    error={errors.stockQuantity}
+                  >
+                    <Input
+                      type="number"
+                      step="0.001"
+                      disabled={Boolean(value)}
+                      value={number('stockQuantity') ?? ''}
+                      onChange={(event) =>
+                        update(
+                          'stockQuantity',
+                          event.target.value
+                            ? Number(event.target.value)
+                            : null,
+                        )
+                      }
+                    />
+                  </Field>
+                  <Field
+                    label="Avisar cuando queden"
+                    error={errors.reorderThreshold}
+                  >
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      value={number('reorderThreshold') ?? ''}
+                      onChange={(event) =>
+                        update(
+                          'reorderThreshold',
+                          event.target.value
+                            ? Number(event.target.value)
+                            : null,
+                        )
+                      }
+                    />
+                  </Field>
+                </div>
+              </div>
               <div className="flex items-center justify-between rounded-xl border p-3 text-sm font-medium">
                 <span>Medicamento activo</span>
                 <Switch

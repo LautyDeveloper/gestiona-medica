@@ -63,6 +63,14 @@ export const alertPreferences = sqliteTable(
       .default(1440),
     taskLeadDays: integer('task_lead_days').notNull().default(0),
     documentLeadDays: integer('document_lead_days').notNull().default(7),
+    medicationLeadMinutes: integer('medication_lead_minutes')
+      .notNull()
+      .default(0),
+    medicationStockEnabled: integer('medication_stock_enabled', {
+      mode: 'boolean',
+    })
+      .notNull()
+      .default(true),
     updatedAt: text('updated_at').notNull(),
   },
   (table) => [
@@ -77,6 +85,14 @@ export const alertPreferences = sqliteTable(
     check(
       'alert_preferences_document_lead_check',
       sql`${table.documentLeadDays} IN (-1, 3, 7, 14)`,
+    ),
+    check(
+      'alert_preferences_medication_lead_check',
+      sql`${table.medicationLeadMinutes} IN (-1, 0, 15, 30, 60)`,
+    ),
+    check(
+      'alert_preferences_medication_stock_check',
+      sql`${table.medicationStockEnabled} IN (0, 1)`,
     ),
   ],
 );
@@ -218,12 +234,150 @@ export const medications = sqliteTable(
     doctor: text('doctor').notNull(),
     notes: text('notes').notNull().default(''),
     active: integer('active', { mode: 'boolean' }).notNull().default(true),
+    scheduleType: text('schedule_type').notNull().default('unstructured'),
+    startDate: text('start_date').notNull().default(''),
+    endDate: text('end_date').notNull().default(''),
+    intervalMinutes: integer('interval_minutes'),
+    intervalAnchorAt: text('interval_anchor_at').notNull().default(''),
+    presentation: text('presentation').notNull().default(''),
+    stockUnit: text('stock_unit').notNull().default(''),
+    unitsPerIntakeMilli: integer('units_per_intake_milli'),
+    stockQuantityMilli: integer('stock_quantity_milli'),
+    reorderThresholdMilli: integer('reorder_threshold_milli'),
+    stockCycle: integer('stock_cycle').notNull().default(1),
     version: integer('version').notNull().default(1),
   },
   (table) => [
     index('idx_medications_person_active').on(table.personId, table.active),
     check('medications_active_check', sql`${table.active} IN (0, 1)`),
+    check(
+      'medications_schedule_type_check',
+      sql`${table.scheduleType} IN ('unstructured', 'fixed_times', 'interval', 'as_needed')`,
+    ),
+    check(
+      'medications_dates_check',
+      sql`${table.endDate} = '' OR ${table.startDate} = '' OR ${table.endDate} >= ${table.startDate}`,
+    ),
+    check(
+      'medications_interval_check',
+      sql`${table.intervalMinutes} IS NULL OR ${table.intervalMinutes} > 0`,
+    ),
+    check(
+      'medications_units_per_intake_check',
+      sql`${table.unitsPerIntakeMilli} IS NULL OR ${table.unitsPerIntakeMilli} > 0`,
+    ),
+    check(
+      'medications_reorder_threshold_check',
+      sql`${table.reorderThresholdMilli} IS NULL OR ${table.reorderThresholdMilli} >= 0`,
+    ),
+    check('medications_stock_cycle_check', sql`${table.stockCycle} > 0`),
     check('medications_version_check', sql`${table.version} > 0`),
+  ],
+);
+
+export const medicationScheduleTimes = sqliteTable(
+  'medication_schedule_times',
+  {
+    id: text('id').primaryKey(),
+    medicationId: text('medication_id')
+      .notNull()
+      .references(() => medications.id, { onDelete: 'cascade' }),
+    localTime: text('local_time').notNull(),
+    position: integer('position').notNull().default(0),
+  },
+  (table) => [
+    uniqueIndex('idx_medication_schedule_times_unique').on(
+      table.medicationId,
+      table.localTime,
+    ),
+    index('idx_medication_schedule_times_medication').on(table.medicationId),
+    check(
+      'medication_schedule_times_time_check',
+      sql`length(${table.localTime}) = 5 AND substr(${table.localTime}, 1, 2) BETWEEN '00' AND '23' AND substr(${table.localTime}, 3, 1) = ':' AND substr(${table.localTime}, 4, 2) BETWEEN '00' AND '59'`,
+    ),
+    check(
+      'medication_schedule_times_position_check',
+      sql`${table.position} >= 0`,
+    ),
+  ],
+);
+
+export const medicationIntakes = sqliteTable(
+  'medication_intakes',
+  {
+    id: text('id').primaryKey(),
+    medicationId: text('medication_id')
+      .notNull()
+      .references(() => medications.id, { onDelete: 'cascade' }),
+    personId: text('person_id')
+      .notNull()
+      .references(() => persons.id, { onDelete: 'cascade' }),
+    scheduledFor: text('scheduled_for'),
+    reportedAt: text('reported_at').notNull(),
+    status: text('status').notNull(),
+    notes: text('notes').notNull().default(''),
+    recordedByUserId: text('recorded_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    recordedByName: text('recorded_by_name').notNull(),
+    createdAt: text('created_at').notNull(),
+    voidedAt: text('voided_at'),
+    voidedByUserId: text('voided_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+  },
+  (table) => [
+    index('idx_medication_intakes_person_reported').on(
+      table.personId,
+      table.reportedAt,
+    ),
+    index('idx_medication_intakes_medication_reported').on(
+      table.medicationId,
+      table.reportedAt,
+    ),
+    uniqueIndex('idx_medication_intakes_scheduled_active')
+      .on(table.medicationId, table.scheduledFor)
+      .where(
+        sql`${table.scheduledFor} IS NOT NULL AND ${table.voidedAt} IS NULL`,
+      ),
+    check(
+      'medication_intakes_status_check',
+      sql`${table.status} IN ('taken', 'not_taken')`,
+    ),
+  ],
+);
+
+export const medicationStockMovements = sqliteTable(
+  'medication_stock_movements',
+  {
+    id: text('id').primaryKey(),
+    medicationId: text('medication_id')
+      .notNull()
+      .references(() => medications.id, { onDelete: 'cascade' }),
+    intakeId: text('intake_id').references(() => medicationIntakes.id, {
+      onDelete: 'set null',
+    }),
+    deltaMilli: integer('delta_milli').notNull(),
+    reason: text('reason').notNull(),
+    recordedByUserId: text('recorded_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    recordedAt: text('recorded_at').notNull(),
+  },
+  (table) => [
+    index('idx_medication_stock_movements_medication').on(
+      table.medicationId,
+      table.recordedAt,
+    ),
+    uniqueIndex('idx_medication_stock_movements_intake').on(table.intakeId),
+    check(
+      'medication_stock_movements_reason_check',
+      sql`${table.reason} IN ('initial', 'restock', 'intake', 'correction')`,
+    ),
+    check(
+      'medication_stock_movements_delta_check',
+      sql`${table.deltaMilli} != 0`,
+    ),
   ],
 );
 export const tasks = sqliteTable(

@@ -10,6 +10,8 @@ import {
   Clock3,
   FileWarning,
   ListTodo,
+  PackageOpen,
+  Pill,
   Settings2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -26,6 +28,7 @@ import {
   NativeSelectOption,
 } from '@/components/ui/native-select';
 import type { Alert, AlertPreferences, AlertsData } from '@/lib/models';
+import { Switch } from '@/components/ui/switch';
 
 export type AlertAction =
   | { action: 'read' | 'unread'; alertId: string }
@@ -35,10 +38,15 @@ export type AlertAction =
 function alertIcon(alert: Alert) {
   if (alert.kind === 'appointment') return <CalendarClock />;
   if (alert.kind === 'task') return <ListTodo />;
+  if (alert.kind === 'medication-dose') return <Pill />;
+  if (alert.kind === 'medication-stock') return <PackageOpen />;
   return <FileWarning />;
 }
 
 function urgencyLabel(alert: Alert) {
+  if (alert.kind === 'medication-dose' && alert.urgency === 'overdue')
+    return 'Sin registrar';
+  if (alert.kind === 'medication-stock') return 'Reposición';
   if (alert.urgency === 'overdue') return 'Vencida';
   if (alert.urgency === 'today') return 'Hoy';
   return 'Próxima';
@@ -138,19 +146,21 @@ export function AlertBell({
                     >
                       Leída
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        void onAction({
-                          action: 'snooze',
-                          alertId: alert.id,
-                          until: tomorrow(),
-                        })
-                      }
-                    >
-                      <Clock3 /> Mañana
-                    </Button>
+                    {alert.kind !== 'medication-dose' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          void onAction({
+                            action: 'snooze',
+                            alertId: alert.id,
+                            until: tomorrow(),
+                          })
+                        }
+                      >
+                        <Clock3 /> Mañana
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -325,47 +335,51 @@ export function AlertsView({
                       >
                         Marcar leída
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() =>
-                          void onAction({
-                            action: 'snooze',
-                            alertId: alert.id,
-                            until: tomorrow(),
-                          })
-                        }
-                      >
-                        Posponer a mañana
-                      </Button>
-                      <div className="flex items-center gap-2">
-                        <input
-                          aria-label={`Posponer ${alert.title} hasta una fecha`}
-                          type="date"
-                          className="h-8 rounded-lg border bg-background px-2 text-sm"
-                          value={customDates[alert.id] || ''}
-                          onChange={(event) =>
-                            setCustomDates((current) => ({
-                              ...current,
-                              [alert.id]: event.target.value,
-                            }))
-                          }
-                        />
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={!customDates[alert.id]}
-                          onClick={() =>
-                            void onAction({
-                              action: 'snooze',
-                              alertId: alert.id,
-                              until: `${customDates[alert.id]}T09:00:00-03:00`,
-                            })
-                          }
-                        >
-                          Posponer
-                        </Button>
-                      </div>
+                      {alert.kind !== 'medication-dose' && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              void onAction({
+                                action: 'snooze',
+                                alertId: alert.id,
+                                until: tomorrow(),
+                              })
+                            }
+                          >
+                            Posponer a mañana
+                          </Button>
+                          <div className="flex items-center gap-2">
+                            <input
+                              aria-label={`Posponer ${alert.title} hasta una fecha`}
+                              type="date"
+                              className="h-8 rounded-lg border bg-background px-2 text-sm"
+                              value={customDates[alert.id] || ''}
+                              onChange={(event) =>
+                                setCustomDates((current) => ({
+                                  ...current,
+                                  [alert.id]: event.target.value,
+                                }))
+                              }
+                            />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={!customDates[alert.id]}
+                              onClick={() =>
+                                void onAction({
+                                  action: 'snooze',
+                                  alertId: alert.id,
+                                  until: `${customDates[alert.id]}T09:00:00-03:00`,
+                                })
+                              }
+                            >
+                              Posponer
+                            </Button>
+                          </div>
+                        </>
+                      )}
                     </>
                   )}
                   {alert.state === 'read' && (
@@ -422,6 +436,24 @@ export function AlertsView({
             ]}
           />
           <PreferenceField
+            label="Tomas"
+            value={draft.medicationLeadMinutes}
+            onChange={(value) =>
+              setDraft((current) => ({
+                ...current,
+                medicationLeadMinutes:
+                  value as AlertPreferences['medicationLeadMinutes'],
+              }))
+            }
+            options={[
+              { value: -1, label: 'Desactivadas' },
+              { value: 0, label: 'A la hora registrada' },
+              { value: 15, label: '15 minutos antes' },
+              { value: 30, label: '30 minutos antes' },
+              { value: 60, label: '1 hora antes' },
+            ]}
+          />
+          <PreferenceField
             label="Pendientes"
             value={draft.taskLeadDays}
             onChange={(value) =>
@@ -456,6 +488,28 @@ export function AlertsView({
               ]}
             />
           )}
+          <label
+            htmlFor="medication-stock-alerts"
+            className="flex min-h-20 items-center justify-between gap-4 rounded-xl border p-3 text-sm font-medium"
+          >
+            <span>
+              Avisos de reposición
+              <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                Se basan en la cantidad estimada.
+              </span>
+            </span>
+            <Switch
+              id="medication-stock-alerts"
+              aria-label="Avisos de reposición"
+              checked={draft.medicationStockEnabled}
+              onCheckedChange={(checked) =>
+                setDraft((current) => ({
+                  ...current,
+                  medicationStockEnabled: checked,
+                }))
+              }
+            />
+          </label>
         </div>
         <Button
           className="mt-5"

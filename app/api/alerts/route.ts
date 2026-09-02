@@ -70,6 +70,14 @@ export async function PATCH(request: Request) {
           { status: 400 },
         );
       const alert = targets[0];
+      if (alert.kind === 'medication-dose')
+        return Response.json(
+          {
+            error:
+              'Los horarios de medicación no se reprograman desde una alerta',
+          },
+          { status: 400 },
+        );
       if (alert.kind === 'appointment' && until > new Date(alert.relevantAt))
         return Response.json(
           { error: 'No podés posponer la alerta después del turno' },

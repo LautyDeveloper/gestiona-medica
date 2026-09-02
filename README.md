@@ -1,7 +1,7 @@
 # Cerca
 
 Cerca es una aplicación familiar para organizar información médica: personas,
-turnos, órdenes, medicamentos, recetas, pendientes y alertas de vencimiento.
+turnos, órdenes, medicamentos, recetas, pendientes, tomas y alertas.
 Corre sobre React/Vinext y Cloudflare Workers, con una base SQLite compatible
 con Cloudflare D1.
 
@@ -72,14 +72,15 @@ request y en cada push a `main`.
 
 ## Respaldos y recuperación
 
-El respaldo actual usa `schemaVersion: 5` y contiene todas las personas y sus
+El respaldo actual usa `schemaVersion: 6` y contiene todas las personas y sus
 registros dentro del grupo familiar seleccionado. La importación también acepta
 versiones anteriores compatibles y las normaliza antes de escribir.
 
 ## Alertas y calendario
 
 Las alertas se calculan a partir de turnos próximos, pendientes con fecha y
-órdenes o recetas por vencer. Cada usuario conserva sus propias preferencias,
+órdenes o recetas por vencer, tomas con horario confirmado y estimaciones de
+stock bajo. Cada usuario conserva sus propias preferencias,
 lecturas y posposiciones. Las cuentas vinculadas a una persona sólo ven sus
 turnos y los pendientes que el cuidador haya decidido compartir.
 
@@ -88,6 +89,18 @@ activo a un calendario externo. El archivo incluye únicamente persona,
 especialidad, fecha, hora y lugar; no exporta notas ni indicaciones médicas.
 Estas alertas funcionan mientras se usa Cerca y no son notificaciones push en
 segundo plano.
+
+## Medicación y tomas
+
+La indicación escrita de dosis y frecuencia se conserva como texto. De forma
+opcional, un cuidador puede confirmar horarios fijos, un intervalo o que el
+medicamento se usa según necesidad. Cerca nunca interpreta automáticamente la
+indicación ni recomienda horarios.
+
+Las tomas son registros informados por la persona o su familia. Un horario sin
+registro se muestra como “Sin registrar”, no como una toma omitida, y no se
+calcula una métrica clínica de adherencia. El seguimiento de cantidad disponible
+también es opcional y se presenta siempre como una estimación.
 
 La restauración es destructiva: reemplaza las personas y la información médica
 del grupo. Antes de restaurar:

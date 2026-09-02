@@ -48,6 +48,8 @@ import {
   AlertsView,
   type AlertAction,
 } from '@/components/alerts-center';
+import { MedicationTodayPanel } from '@/components/medication-today';
+import { MedicationRestockDialog } from '@/components/medication-restock-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -82,6 +84,10 @@ import type {
   Alert,
   AlertPreferences,
   AlertsData,
+  Medication,
+  MedicationIntakeStatus,
+  MedicationOccurrence,
+  MedicationTodayData,
 } from '@/lib/models';
 import { chooseActivePerson } from '@/lib/person-selection';
 import { DEFAULT_ALERT_PREFERENCES } from '@/lib/alerts';
@@ -102,6 +108,10 @@ function OrganizerContent() {
   const [alertPreferences, setAlertPreferences] = useState<AlertPreferences>(
     DEFAULT_ALERT_PREFERENCES,
   );
+  const [medicationToday, setMedicationToday] =
+    useState<MedicationTodayData | null>(null);
+  const [medicationTodayLoading, setMedicationTodayLoading] = useState(false);
+  const [restockTarget, setRestockTarget] = useState<Medication | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [contentLoading, setContentLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -179,6 +189,31 @@ function OrganizerContent() {
     [],
   );
 
+  const loadMedicationToday = useCallback(
+    async (
+      personId: string,
+      careGroupId = activeGroupIdRef.current,
+      { background = false }: { background?: boolean } = {},
+    ) => {
+      if (!background) setMedicationTodayLoading(true);
+      try {
+        const response = await requestJson<MedicationTodayData>(
+          `/api/medications/today?personId=${encodeURIComponent(personId)}&careGroupId=${encodeURIComponent(careGroupId)}`,
+        );
+        if (
+          activePersonIdRef.current === personId &&
+          activeGroupIdRef.current === careGroupId
+        )
+          setMedicationToday(response);
+        return response;
+      } finally {
+        if (!background && activePersonIdRef.current === personId)
+          setMedicationTodayLoading(false);
+      }
+    },
+    [],
+  );
+
   const selectPerson = useCallback(
     async (personId: string) => {
       activePersonIdRef.current = personId;
@@ -187,9 +222,12 @@ function OrganizerContent() {
         `${ACTIVE_PERSON_KEY}:${activeGroupIdRef.current}`,
         personId,
       );
-      await loadPersonData(personId, activeGroupIdRef.current);
+      await Promise.all([
+        loadPersonData(personId, activeGroupIdRef.current),
+        loadMedicationToday(personId, activeGroupIdRef.current),
+      ]);
     },
-    [loadPersonData],
+    [loadMedicationToday, loadPersonData],
   );
 
   const loadPeople = useCallback(
@@ -310,6 +348,9 @@ function OrganizerContent() {
           personId
             ? loadPersonData(personId, careGroupId, { background: true })
             : Promise.resolve(),
+          personId
+            ? loadMedicationToday(personId, careGroupId, { background: true })
+            : Promise.resolve(),
         ]);
       } finally {
         backgroundRefreshRef.current = false;
@@ -322,7 +363,7 @@ function OrganizerContent() {
       document.removeEventListener('visibilitychange', refreshWhenVisible);
       window.removeEventListener('focus', refreshWhenVisible);
     };
-  }, [loadAlerts, loadGroup, loadPeople, loadPersonData]);
+  }, [loadAlerts, loadGroup, loadMedicationToday, loadPeople, loadPersonData]);
 
   function openNew(entity: Entity) {
     setConversion(null);
@@ -576,7 +617,10 @@ function OrganizerContent() {
       }),
     });
     if (activePersonIdRef.current === targetPersonId)
-      await loadPersonData(targetPersonId);
+      await Promise.all([
+        loadPersonData(targetPersonId),
+        loadMedicationToday(targetPersonId),
+      ]);
     await Promise.all([loadPeople(), loadAlerts()]);
     toast.add({
       title: id ? 'Cambios guardados' : 'Registro creado',
@@ -618,6 +662,107 @@ function OrganizerContent() {
     setAlertPreferences(response.preferences);
     await loadAlerts();
     toast.add({ title: 'Preferencias guardadas', type: 'success' });
+  }
+
+  async function recordIntake(
+    occurrence: MedicationOccurrence,
+    status: MedicationIntakeStatus,
+  ) {
+    const personId = activePersonIdRef.current;
+    if (!personId) return;
+    try {
+      await requestJson('/api/medication-intakes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          careGroupId: activeGroupIdRef.current,
+          data: {
+            medicationId: occurrence.medicationId,
+            personId,
+            scheduledFor: occurrence.scheduledFor,
+            reportedAt: new Date().toISOString(),
+            status,
+            notes: '',
+          },
+        }),
+      });
+      await Promise.all([
+        loadMedicationToday(personId),
+        loadPersonData(personId, activeGroupIdRef.current, {
+          background: true,
+        }),
+        loadAlerts(),
+      ]);
+      toast.add({
+        title: status === 'taken' ? 'Toma registrada' : 'Registro actualizado',
+        description:
+          'Es un dato informado y no constituye una comprobación clínica.',
+        type: 'success',
+      });
+    } catch (error) {
+      toast.add({
+        title: 'No se pudo registrar la toma',
+        description:
+          error instanceof Error ? error.message : 'Intentá nuevamente.',
+        type: 'error',
+      });
+    }
+  }
+
+  async function voidIntake(intakeId: string) {
+    const personId = activePersonIdRef.current;
+    if (!personId) return;
+    try {
+      await requestJson('/api/medication-intakes', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: intakeId,
+          personId,
+          careGroupId: activeGroupIdRef.current,
+        }),
+      });
+      await Promise.all([
+        loadMedicationToday(personId),
+        loadPersonData(personId, activeGroupIdRef.current, {
+          background: true,
+        }),
+        loadAlerts(),
+      ]);
+      toast.add({ title: 'Registro corregido', type: 'success' });
+    } catch (error) {
+      toast.add({
+        title: 'No se pudo corregir el registro',
+        description:
+          error instanceof Error ? error.message : 'Intentá nuevamente.',
+        type: 'error',
+      });
+    }
+  }
+
+  async function restockMedication(quantity: number, mode: 'add' | 'set') {
+    const personId = activePersonIdRef.current;
+    if (!personId || !restockTarget) return;
+    await requestJson('/api/medications/stock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        careGroupId: activeGroupIdRef.current,
+        data: {
+          medicationId: restockTarget.id,
+          personId,
+          quantity,
+          mode,
+        },
+      }),
+    });
+    await Promise.all([
+      loadPersonData(personId, activeGroupIdRef.current, {
+        background: true,
+      }),
+      loadAlerts(),
+    ]);
+    toast.add({ title: 'Cantidad actualizada', type: 'success' });
   }
 
   async function navigateFromAlert(alert: Alert) {
@@ -681,7 +826,12 @@ function OrganizerContent() {
         data: payload,
       }),
     });
-    await Promise.all([loadPersonData(personId), loadPeople(), loadAlerts()]);
+    await Promise.all([
+      loadPersonData(personId),
+      loadMedicationToday(personId),
+      loadPeople(),
+      loadAlerts(),
+    ]);
     toast.add({
       title:
         conversion.source.entity === 'order'
@@ -740,7 +890,10 @@ function OrganizerContent() {
         { method: 'DELETE' },
       );
       if (activePersonIdRef.current === deleteTarget.personId)
-        await loadPersonData(deleteTarget.personId);
+        await Promise.all([
+          loadPersonData(deleteTarget.personId),
+          loadMedicationToday(deleteTarget.personId),
+        ]);
       await Promise.all([loadPeople(), loadAlerts()]);
       setDeleteTarget(null);
       toast.add({
@@ -1079,6 +1232,15 @@ function OrganizerContent() {
                   items={data.medications}
                   onNew={() => openNew('medication')}
                   onEdit={(item) => openEdit('medication', item)}
+                  onRestock={setRestockTarget}
+                  today={
+                    <MedicationTodayPanel
+                      data={medicationToday}
+                      loading={medicationTodayLoading}
+                      onRecord={recordIntake}
+                      onVoid={voidIntake}
+                    />
+                  }
                   onDelete={(id) => {
                     const item = data.medications.find(
                       (value) => value.id === id,
@@ -1212,6 +1374,14 @@ function OrganizerContent() {
         onSave={conversion ? convertDocument : save}
         initialData={conversion?.initialData}
         canShowToElder={Boolean(activePerson.access)}
+      />
+      <MedicationRestockDialog
+        key={restockTarget?.id || 'restock-closed'}
+        medication={restockTarget}
+        onOpenChange={(open) => {
+          if (!open) setRestockTarget(null);
+        }}
+        onSave={restockMedication}
       />
       <PersonDialog
         key={`${personDialog.person?.id || 'new'}-${personDialog.open}`}

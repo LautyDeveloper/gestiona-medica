@@ -27,6 +27,12 @@ const documentMigration = '0006_medical_orders_prescriptions.sql';
 const documentTables = ['medical_orders', 'prescriptions'];
 const alertsMigration = '0010_sloppy_peter_parker.sql';
 const alertTables = ['alert_preferences', 'alert_states'];
+const medicationMigration = '0011_keen_mac_gargan.sql';
+const medicationTables = [
+  'medication_intakes',
+  'medication_schedule_times',
+  'medication_stock_movements',
+];
 
 const expectedColumns = {
   alert_preferences: [
@@ -35,6 +41,8 @@ const expectedColumns = {
     'task_lead_days',
     'document_lead_days',
     'updated_at',
+    'medication_lead_minutes',
+    'medication_stock_enabled',
   ],
   alert_states: [
     'user_id',
@@ -81,6 +89,41 @@ const expectedColumns = {
     'notes',
     'active',
     'version',
+    'schedule_type',
+    'start_date',
+    'end_date',
+    'interval_minutes',
+    'interval_anchor_at',
+    'presentation',
+    'stock_unit',
+    'units_per_intake_milli',
+    'stock_quantity_milli',
+    'reorder_threshold_milli',
+    'stock_cycle',
+  ],
+  medication_intakes: [
+    'id',
+    'medication_id',
+    'person_id',
+    'scheduled_for',
+    'reported_at',
+    'status',
+    'notes',
+    'recorded_by_user_id',
+    'recorded_by_name',
+    'created_at',
+    'voided_at',
+    'voided_by_user_id',
+  ],
+  medication_schedule_times: ['id', 'medication_id', 'local_time', 'position'],
+  medication_stock_movements: [
+    'id',
+    'medication_id',
+    'intake_id',
+    'delta_milli',
+    'reason',
+    'recorded_by_user_id',
+    'recorded_at',
   ],
   memberships: ['id', 'user_id', 'care_group_id', 'role', 'created_at'],
   persons: [
@@ -146,6 +189,13 @@ const expectedIndexes = [
   'idx_alert_states_user_updated',
   'idx_appointments_person_date',
   'idx_medications_person_active',
+  'idx_medication_intakes_person_reported',
+  'idx_medication_intakes_medication_reported',
+  'idx_medication_intakes_scheduled_active',
+  'idx_medication_schedule_times_unique',
+  'idx_medication_schedule_times_medication',
+  'idx_medication_stock_movements_medication',
+  'idx_medication_stock_movements_intake',
   'idx_medical_orders_person_status_expiration',
   'idx_memberships_group_user',
   'idx_memberships_user',
@@ -162,6 +212,10 @@ const expectedTriggers = [
   'persons_care_group_update',
   'tasks_elder_visibility_insert',
   'tasks_elder_visibility_update',
+  'medication_structure_insert',
+  'medication_structure_update',
+  'alert_medication_preferences_insert',
+  'alert_medication_preferences_update',
 ];
 
 function wrangler(args, { json = false, inherit = false } = {}) {
@@ -247,8 +301,11 @@ function inspectSchema() {
   const documentsMayBePending =
     onlyDocumentsMissing && !migrations.includes(documentMigration);
   const alertsMayBePending = !migrations.includes(alertsMigration);
+  const medicationMayBePending = !migrations.includes(medicationMigration);
   const unexpectedMissing = missing.filter(
-    (name) => !(alertsMayBePending && alertTables.includes(name)),
+    (name) =>
+      !(alertsMayBePending && alertTables.includes(name)) &&
+      !(medicationMayBePending && medicationTables.includes(name)),
   );
   if (unexpectedMissing.length && !documentsMayBePending) {
     problems.push(`faltan tablas: ${unexpectedMissing.join(', ')}`);
@@ -259,10 +316,33 @@ function inspectSchema() {
     const columns = query(`PRAGMA table_info(${table})`).map(
       ({ name }) => name,
     );
-    const expectedBeforeAlerts =
+    let expectedBeforeAlerts =
       alertsMayBePending && table === 'tasks'
         ? expected.filter((column) => column !== 'visible_to_elder')
         : expected;
+    if (medicationMayBePending && table === 'alert_preferences')
+      expectedBeforeAlerts = expectedBeforeAlerts.filter(
+        (column) =>
+          column !== 'medication_lead_minutes' &&
+          column !== 'medication_stock_enabled',
+      );
+    if (medicationMayBePending && table === 'medications')
+      expectedBeforeAlerts = expectedBeforeAlerts.filter(
+        (column) =>
+          ![
+            'schedule_type',
+            'start_date',
+            'end_date',
+            'interval_minutes',
+            'interval_anchor_at',
+            'presentation',
+            'stock_unit',
+            'units_per_intake_milli',
+            'stock_quantity_milli',
+            'reorder_threshold_milli',
+            'stock_cycle',
+          ].includes(column),
+      );
     if (columns.join('|') !== expectedBeforeAlerts.join('|'))
       problems.push(`las columnas de ${table} no coinciden`);
   }
@@ -278,7 +358,12 @@ function inspectSchema() {
     (name) =>
       !presentIndexes.has(name) &&
       !(documentsMayBePending && documentIndexes.has(name)) &&
-      !(alertsMayBePending && name === 'idx_alert_states_user_updated'),
+      !(alertsMayBePending && name === 'idx_alert_states_user_updated') &&
+      !(
+        medicationMayBePending &&
+        (name.startsWith('idx_medication_') ||
+          name.startsWith('idx_medication_schedule_'))
+      ),
   );
   if (missingIndexes.length)
     problems.push(`faltan índices: ${missingIndexes.join(', ')}`);
@@ -293,6 +378,11 @@ function inspectSchema() {
         alertsMayBePending &&
         (name === 'tasks_elder_visibility_insert' ||
           name === 'tasks_elder_visibility_update')
+      ) &&
+      !(
+        medicationMayBePending &&
+        (name.startsWith('medication_structure_') ||
+          name.startsWith('alert_medication_preferences_'))
       ),
   );
   if (missingTriggers.length)
