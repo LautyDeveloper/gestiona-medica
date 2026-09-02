@@ -24,6 +24,7 @@ import {
 } from '@/components/alerts-center';
 import { authorizedFetch, requestJson } from '@/lib/client-api';
 import { DEFAULT_ALERT_PREFERENCES } from '@/lib/alerts';
+import { MedicationTodayPanel } from '@/components/medication-today';
 import { fullArgentinaDate, splitElderAppointments } from '@/lib/elder-view';
 import { formatLongDate } from '@/lib/format';
 import type {
@@ -33,6 +34,9 @@ import type {
   ElderData,
   ElderSection,
   Medication,
+  MedicationIntakeStatus,
+  MedicationOccurrence,
+  MedicationTodayData,
 } from '@/lib/models';
 
 const navigation: Array<{
@@ -84,6 +88,20 @@ function MedicationCard({ medication }: { medication: Medication }) {
           <p className="mt-1 text-base font-semibold leading-6">
             {medication.frequency}
           </p>
+          {medication.scheduleType === 'fixed_times' && (
+            <p className="mt-2 text-base">
+              Horarios: {medication.scheduleTimes.join(', ')}
+            </p>
+          )}
+          {medication.scheduleType === 'interval' &&
+            medication.intervalMinutes && (
+              <p className="mt-2 text-base">
+                Cada {medication.intervalMinutes / 60} horas
+              </p>
+            )}
+          {medication.scheduleType === 'as_needed' && (
+            <p className="mt-2 text-base">Según necesidad</p>
+          )}
         </div>
       </div>
       <div className="mt-5 border-t pt-4 text-base leading-7 text-muted-foreground">
@@ -156,6 +174,9 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
   const [alertPreferences, setAlertPreferences] = useState<AlertPreferences>(
     DEFAULT_ALERT_PREFERENCES,
   );
+  const [medicationToday, setMedicationToday] =
+    useState<MedicationTodayData | null>(null);
+  const [medicationActionError, setMedicationActionError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [appointmentView, setAppointmentView] = useState<
@@ -188,6 +209,18 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
     }
   }, []);
 
+  const loadMedicationToday = useCallback(async () => {
+    try {
+      const response = await requestJson<MedicationTodayData>(
+        '/api/medications/today',
+      );
+      setMedicationToday(response);
+      return response;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -195,6 +228,7 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
       const nextData = await requestJson<ElderData>('/api/elder/data');
       setData(nextData);
       void loadAlertInfo();
+      void loadMedicationToday();
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -204,11 +238,14 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
     } finally {
       setLoading(false);
     }
-  }, [loadAlertInfo]);
+  }, [loadAlertInfo, loadMedicationToday]);
 
   useEffect(() => {
     const refresh = () => {
-      if (document.visibilityState === 'visible') void loadAlertInfo();
+      if (document.visibilityState === 'visible') {
+        void loadAlertInfo();
+        void loadMedicationToday();
+      }
     };
     document.addEventListener('visibilitychange', refresh);
     window.addEventListener('focus', refresh);
@@ -216,7 +253,64 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
       document.removeEventListener('visibilitychange', refresh);
       window.removeEventListener('focus', refresh);
     };
-  }, [loadAlertInfo]);
+  }, [loadAlertInfo, loadMedicationToday]);
+
+  async function recordIntake(
+    occurrence: MedicationOccurrence,
+    status: MedicationIntakeStatus,
+  ) {
+    setMedicationActionError('');
+    try {
+      await requestJson('/api/medication-intakes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          data: {
+            medicationId: occurrence.medicationId,
+            scheduledFor: occurrence.scheduledFor,
+            reportedAt: new Date().toISOString(),
+            status,
+            notes: '',
+          },
+        }),
+      });
+      const [nextData] = await Promise.all([
+        requestJson<ElderData>('/api/elder/data'),
+        loadMedicationToday(),
+        loadAlertInfo(),
+      ]);
+      setData(nextData);
+    } catch (caught) {
+      setMedicationActionError(
+        caught instanceof Error
+          ? caught.message
+          : 'No se pudo registrar la toma',
+      );
+    }
+  }
+
+  async function voidIntake(intakeId: string) {
+    setMedicationActionError('');
+    try {
+      await requestJson('/api/medication-intakes', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: intakeId }),
+      });
+      const [nextData] = await Promise.all([
+        requestJson<ElderData>('/api/elder/data'),
+        loadMedicationToday(),
+        loadAlertInfo(),
+      ]);
+      setData(nextData);
+    } catch (caught) {
+      setMedicationActionError(
+        caught instanceof Error
+          ? caught.message
+          : 'No se pudo corregir el registro',
+      );
+    }
+  }
 
   async function changeAlert(action: AlertAction) {
     await requestJson('/api/alerts', {
@@ -422,6 +516,13 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
               )}
             </section>
 
+            <MedicationTodayPanel
+              data={medicationToday}
+              error={medicationActionError}
+              onRecord={recordIntake}
+              onVoid={voidIntake}
+            />
+
             <section aria-labelledby="today-medications-title">
               <div className="mb-4">
                 <h2
@@ -526,6 +627,14 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
             >
               Mis medicamentos
             </h1>
+            <div className="mt-6">
+              <MedicationTodayPanel
+                data={medicationToday}
+                error={medicationActionError}
+                onRecord={recordIntake}
+                onVoid={voidIntake}
+              />
+            </div>
             <div className="mt-6 grid grid-cols-2 gap-2 rounded-2xl bg-muted p-1.5">
               <button
                 className={`min-h-12 rounded-xl px-3 text-base font-bold ${medicationView === 'active' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'}`}
@@ -615,7 +724,13 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
             preferences={alertPreferences}
             onAction={changeAlert}
             onNavigate={(alert) =>
-              setSection(alert.kind === 'task' ? 'tasks' : 'appointments')
+              setSection(
+                alert.kind === 'task'
+                  ? 'tasks'
+                  : alert.kind.startsWith('medication')
+                    ? 'medications'
+                    : 'appointments',
+              )
             }
             onSavePreferences={saveAlertPreferences}
           />

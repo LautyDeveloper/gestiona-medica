@@ -4,7 +4,8 @@ import type {
   BackupData,
   MedicalOrder,
   MedicalTask,
-  Medication,
+  MedicationIntake,
+  MedicationStockMovement,
   Person,
   Prescription,
 } from '@/lib/models';
@@ -12,6 +13,13 @@ import { backupImportSchema, fieldErrors } from '@/lib/validation';
 import { requireMembership, requireSameOrigin } from '@/lib/server-auth';
 import { PayloadTooLargeError, readJsonWithLimit } from '@/lib/request-body';
 import { handleApiError, jsonError } from '@/lib/api-response';
+import { fromStockMilli } from '@/lib/medications';
+import {
+  hydrateMedications,
+  MEDICATION_SELECT,
+  type RawMedication,
+  type RawScheduleTime,
+} from '@/lib/server-medications';
 
 const MAX_BACKUP_BYTES = 5_000_000;
 const JSON_CHUNK_BYTES = 750_000;
@@ -49,6 +57,9 @@ export async function GET(request: Request) {
       medications,
       prescriptions,
       tasks,
+      medicationTimes,
+      medicationIntakes,
+      medicationStockMovements,
     ] = await Promise.all([
       db
         .prepare('SELECT name FROM care_groups WHERE id = ?')
@@ -74,10 +85,12 @@ export async function GET(request: Request) {
         .all<MedicalOrder>(),
       db
         .prepare(
-          'SELECT m.id, m.person_id AS personId, m.name, m.dose, m.frequency, m.doctor, m.notes, m.active FROM medications m JOIN persons p ON p.id = m.person_id WHERE p.care_group_id = ? ORDER BY m.person_id, m.name',
+          `SELECT m.* FROM (SELECT ${MEDICATION_SELECT} FROM medications) m
+           JOIN persons p ON p.id = m.personId WHERE p.care_group_id = ?
+           ORDER BY m.personId, m.name`,
         )
         .bind(careGroupId)
-        .all<Omit<Medication, 'active'> & { active: number }>(),
+        .all<RawMedication>(),
       db
         .prepare(
           'SELECT r.id, r.person_id AS personId, r.medication_name AS medicationName, r.presentation, r.dose, r.frequency, r.duration, r.prescribed_by AS prescribedBy, r.issue_date AS issueDate, r.expiration_date AS expirationDate, r.notes, r.status, r.medication_id AS medicationId, r.used_at AS usedAt FROM prescriptions r JOIN persons p ON p.id = r.person_id WHERE p.care_group_id = ? ORDER BY r.person_id, r.expiration_date',
@@ -90,11 +103,44 @@ export async function GET(request: Request) {
         )
         .bind(careGroupId)
         .all<MedicalTask>(),
+      db
+        .prepare(
+          `SELECT st.medication_id AS medicationId, st.local_time AS localTime
+           FROM medication_schedule_times st JOIN medications m ON m.id = st.medication_id
+           JOIN persons p ON p.id = m.person_id WHERE p.care_group_id = ?
+           ORDER BY st.medication_id, st.position, st.local_time`,
+        )
+        .bind(careGroupId)
+        .all<RawScheduleTime>(),
+      db
+        .prepare(
+          `SELECT i.id, i.medication_id AS medicationId,
+             i.person_id AS personId, i.scheduled_for AS scheduledFor,
+             i.reported_at AS reportedAt, i.status, i.notes,
+             i.recorded_by_name AS recordedByName, i.created_at AS createdAt,
+             i.voided_at AS voidedAt
+           FROM medication_intakes i JOIN persons p ON p.id = i.person_id
+           WHERE p.care_group_id = ? ORDER BY i.reported_at`,
+        )
+        .bind(careGroupId)
+        .all<MedicationIntake>(),
+      db
+        .prepare(
+          `SELECT sm.id, sm.medication_id AS medicationId,
+             sm.intake_id AS intakeId, sm.delta_milli AS deltaMilli,
+             sm.reason, sm.recorded_at AS recordedAt
+           FROM medication_stock_movements sm
+           JOIN medications m ON m.id = sm.medication_id
+           JOIN persons p ON p.id = m.person_id
+           WHERE p.care_group_id = ? ORDER BY sm.recorded_at`,
+        )
+        .bind(careGroupId)
+        .all<Omit<MedicationStockMovement, 'delta'> & { deltaMilli: number }>(),
     ]);
     if (!people.results.length)
       return jsonError('No hay datos para respaldar', 404);
     const backup: BackupData = {
-      schemaVersion: 5,
+      schemaVersion: 6,
       exportedAt: new Date().toISOString(),
       careGroup: { name: group?.name || 'Grupo familiar' },
       persons: people.results.map((person) => ({
@@ -103,10 +149,17 @@ export async function GET(request: Request) {
       })),
       appointments: appointments.results,
       orders: orders.results,
-      medications: medications.results.map((item) => ({
-        ...item,
-        active: Boolean(item.active),
-      })),
+      medications: hydrateMedications(
+        medications.results,
+        medicationTimes.results,
+      ),
+      medicationIntakes: medicationIntakes.results,
+      medicationStockMovements: medicationStockMovements.results.map(
+        ({ deltaMilli, ...item }) => ({
+          ...item,
+          delta: fromStockMilli(deltaMilli)!,
+        }),
+      ),
       prescriptions: prescriptions.results,
       tasks: tasks.results.map((item) => ({
         ...item,
@@ -150,6 +203,9 @@ export async function POST(request: Request) {
     const medicationIds = new Map(
       backup.medications.map((item) => [item.id, crypto.randomUUID()]),
     );
+    const intakeIds = new Map(
+      backup.medicationIntakes.map((item) => [item.id, crypto.randomUUID()]),
+    );
     const people = backup.persons.map((person) => ({
       ...person,
       id: personIds.get(person.id),
@@ -164,6 +220,28 @@ export async function POST(request: Request) {
       id: medicationIds.get(item.id),
       personId: personIds.get(item.personId),
     }));
+    const medicationTimes = medications.flatMap((item) =>
+      item.scheduleTimes.map((localTime, position) => ({
+        id: crypto.randomUUID(),
+        medicationId: item.id,
+        localTime,
+        position,
+      })),
+    );
+    const medicationIntakes = backup.medicationIntakes.map((item) => ({
+      ...item,
+      id: intakeIds.get(item.id),
+      medicationId: medicationIds.get(item.medicationId),
+      personId: personIds.get(item.personId),
+    }));
+    const medicationStockMovements = backup.medicationStockMovements.map(
+      (item) => ({
+        ...item,
+        id: crypto.randomUUID(),
+        medicationId: medicationIds.get(item.medicationId),
+        intakeId: item.intakeId ? intakeIds.get(item.intakeId) || null : null,
+      }),
+    );
     const tasks = backup.tasks.map((item) => ({
       ...item,
       id: crypto.randomUUID(),
@@ -223,6 +301,29 @@ export async function POST(request: Request) {
         .bind(careGroupId),
       db
         .prepare(
+          `DELETE FROM medication_stock_movements
+           WHERE medication_id IN (
+             SELECT m.id FROM medications m JOIN persons p ON p.id = m.person_id
+             WHERE p.care_group_id = ?
+           )`,
+        )
+        .bind(careGroupId),
+      db
+        .prepare(
+          'DELETE FROM medication_intakes WHERE person_id IN (SELECT id FROM persons WHERE care_group_id = ?)',
+        )
+        .bind(careGroupId),
+      db
+        .prepare(
+          `DELETE FROM medication_schedule_times
+           WHERE medication_id IN (
+             SELECT m.id FROM medications m JOIN persons p ON p.id = m.person_id
+             WHERE p.care_group_id = ?
+           )`,
+        )
+        .bind(careGroupId),
+      db
+        .prepare(
           'DELETE FROM appointments WHERE person_id IN (SELECT id FROM persons WHERE care_group_id = ?)',
         )
         .bind(careGroupId),
@@ -266,11 +367,78 @@ export async function POST(request: Request) {
       ...jsonChunks(medications).map((chunk) =>
         db
           .prepare(
-            `INSERT INTO medications (id, person_id, name, dose, frequency, doctor, notes, active, version)
+            `INSERT INTO medications (
+               id, person_id, name, dose, frequency, doctor, notes, active,
+               schedule_type, start_date, end_date, interval_minutes,
+               interval_anchor_at, presentation, stock_unit,
+               units_per_intake_milli, stock_quantity_milli,
+               reorder_threshold_milli, stock_cycle, version)
              SELECT json_extract(value, '$.id'), json_extract(value, '$.personId'),
                json_extract(value, '$.name'), json_extract(value, '$.dose'),
                json_extract(value, '$.frequency'), json_extract(value, '$.doctor'),
-               json_extract(value, '$.notes'), CASE WHEN json_extract(value, '$.active') THEN 1 ELSE 0 END, 1
+               json_extract(value, '$.notes'),
+               CASE WHEN json_extract(value, '$.active') THEN 1 ELSE 0 END,
+               json_extract(value, '$.scheduleType'),
+               json_extract(value, '$.startDate'), json_extract(value, '$.endDate'),
+               json_extract(value, '$.intervalMinutes'),
+               json_extract(value, '$.intervalAnchorAt'),
+               json_extract(value, '$.presentation'), json_extract(value, '$.stockUnit'),
+               CASE WHEN json_type(value, '$.unitsPerIntake') = 'null' THEN NULL
+                 ELSE ROUND(json_extract(value, '$.unitsPerIntake') * 1000) END,
+               CASE WHEN json_type(value, '$.stockQuantity') = 'null' THEN NULL
+                 ELSE ROUND(json_extract(value, '$.stockQuantity') * 1000) END,
+               CASE WHEN json_type(value, '$.reorderThreshold') = 'null' THEN NULL
+                 ELSE ROUND(json_extract(value, '$.reorderThreshold') * 1000) END,
+               COALESCE(json_extract(value, '$.stockCycle'), 1), 1
+             FROM json_each(?)`,
+          )
+          .bind(chunk),
+      ),
+      ...jsonChunks(medicationTimes).map((chunk) =>
+        db
+          .prepare(
+            `INSERT INTO medication_schedule_times
+               (id, medication_id, local_time, position)
+             SELECT json_extract(value, '$.id'),
+               json_extract(value, '$.medicationId'),
+               json_extract(value, '$.localTime'),
+               json_extract(value, '$.position')
+             FROM json_each(?)`,
+          )
+          .bind(chunk),
+      ),
+      ...jsonChunks(medicationIntakes).map((chunk) =>
+        db
+          .prepare(
+            `INSERT INTO medication_intakes (
+               id, medication_id, person_id, scheduled_for, reported_at,
+               status, notes, recorded_by_user_id, recorded_by_name,
+               created_at, voided_at, voided_by_user_id)
+             SELECT json_extract(value, '$.id'),
+               json_extract(value, '$.medicationId'),
+               json_extract(value, '$.personId'),
+               json_extract(value, '$.scheduledFor'),
+               json_extract(value, '$.reportedAt'), json_extract(value, '$.status'),
+               json_extract(value, '$.notes'), NULL,
+               json_extract(value, '$.recordedByName'),
+               json_extract(value, '$.createdAt'),
+               json_extract(value, '$.voidedAt'), NULL
+             FROM json_each(?)`,
+          )
+          .bind(chunk),
+      ),
+      ...jsonChunks(medicationStockMovements).map((chunk) =>
+        db
+          .prepare(
+            `INSERT INTO medication_stock_movements (
+               id, medication_id, intake_id, delta_milli, reason,
+               recorded_by_user_id, recorded_at)
+             SELECT json_extract(value, '$.id'),
+               json_extract(value, '$.medicationId'),
+               json_extract(value, '$.intakeId'),
+               ROUND(json_extract(value, '$.delta') * 1000),
+               json_extract(value, '$.reason'), NULL,
+               json_extract(value, '$.recordedAt')
              FROM json_each(?)`,
           )
           .bind(chunk),

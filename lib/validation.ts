@@ -27,6 +27,16 @@ const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Ingresá una fecha válida')
   .refine(isCalendarDate, 'Ingresá una fecha válida');
+const optionalIsoDate = z.union([z.literal(''), isoDate]).default('');
+const localDateTime = z
+  .string()
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/,
+    'Ingresá una fecha y hora válidas',
+  );
+const scheduleTime = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Ingresá un horario válido');
 
 export const personSchema = z.object({
   name: cleanText('El nombre', 120),
@@ -161,14 +171,100 @@ export const appointmentSchema = z.object({
   status: z.enum(['Próximo', 'Realizado', 'Cancelado']).default('Próximo'),
 });
 
-export const medicationSchema = z.object({
+export const medicationSchema = z
+  .object({
+    personId: z.uuid().optional(),
+    name: cleanText('El nombre', 120),
+    dose: cleanText('La dosis', 80),
+    frequency: cleanText('La frecuencia', 120),
+    doctor: cleanText('El médico', 120),
+    notes: optionalText(1000),
+    active: z.boolean().default(true),
+    scheduleType: z
+      .enum(['unstructured', 'fixed_times', 'interval', 'as_needed'])
+      .default('unstructured'),
+    scheduleTimes: z.array(scheduleTime).max(12).default([]),
+    startDate: optionalIsoDate,
+    endDate: optionalIsoDate,
+    intervalMinutes: z
+      .number()
+      .int()
+      .min(30)
+      .max(10080)
+      .nullable()
+      .default(null),
+    intervalAnchorAt: z.union([z.literal(''), localDateTime]).default(''),
+    presentation: optionalText(120),
+    stockUnit: optionalText(40),
+    unitsPerIntake: z.number().positive().max(100000).nullable().default(null),
+    stockQuantity: z
+      .number()
+      .min(-1000000)
+      .max(1000000)
+      .nullable()
+      .default(null),
+    reorderThreshold: z.number().min(0).max(1000000).nullable().default(null),
+    stockCycle: z.number().int().positive().optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.endDate && value.startDate && value.endDate < value.startDate)
+      context.addIssue({
+        code: 'custom',
+        path: ['endDate'],
+        message: 'La fecha final no puede ser anterior a la inicial',
+      });
+    if (value.scheduleType !== 'unstructured' && !value.startDate)
+      context.addIssue({
+        code: 'custom',
+        path: ['startDate'],
+        message: 'Indicá cuándo comienza el tratamiento',
+      });
+    if (
+      value.scheduleType === 'fixed_times' &&
+      (!value.scheduleTimes.length ||
+        new Set(value.scheduleTimes).size !== value.scheduleTimes.length)
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['scheduleTimes'],
+        message: 'Agregá horarios válidos y sin repetir',
+      });
+    if (
+      value.scheduleType === 'interval' &&
+      (!value.intervalMinutes || !value.intervalAnchorAt)
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['intervalMinutes'],
+        message: 'Indicá el intervalo y desde qué momento se calcula',
+      });
+    const stockValues = [
+      value.unitsPerIntake,
+      value.stockQuantity,
+      value.reorderThreshold,
+    ];
+    if (stockValues.some((item) => item !== null) && !value.stockUnit)
+      context.addIssue({
+        code: 'custom',
+        path: ['stockUnit'],
+        message: 'Indicá la unidad usada para el stock',
+      });
+  });
+
+export const medicationIntakeSchema = z.object({
+  medicationId: z.uuid(),
   personId: z.uuid().optional(),
-  name: cleanText('El nombre', 120),
-  dose: cleanText('La dosis', 80),
-  frequency: cleanText('La frecuencia', 120),
-  doctor: cleanText('El médico', 120),
-  notes: optionalText(1000),
-  active: z.boolean().default(true),
+  scheduledFor: z.iso.datetime().nullable().default(null),
+  reportedAt: z.iso.datetime(),
+  status: z.enum(['taken', 'not_taken']),
+  notes: optionalText(500),
+});
+
+export const medicationStockAdjustmentSchema = z.object({
+  medicationId: z.uuid(),
+  personId: z.uuid().optional(),
+  quantity: z.number().positive().max(1000000),
+  mode: z.enum(['add', 'set']).default('add'),
 });
 
 function documentDates<T extends z.ZodRawShape>(shape: T) {
@@ -244,9 +340,33 @@ const appointmentBackupSchema = appointmentSchema.extend({
   id: z.uuid(),
   personId: z.uuid(),
 });
-const medicationBackupSchema = medicationSchema.extend({
+const medicationBackupSchema = medicationSchema.safeExtend({
   id: z.uuid(),
   personId: z.uuid(),
+});
+const medicationIntakeBackupSchema = z.object({
+  id: z.uuid(),
+  medicationId: z.uuid(),
+  personId: z.uuid(),
+  scheduledFor: z.iso.datetime().nullable(),
+  reportedAt: z.iso.datetime(),
+  status: z.enum(['taken', 'not_taken']),
+  notes: optionalText(500),
+  recordedByName: cleanText('La persona que registró la toma', 120),
+  createdAt: z.iso.datetime(),
+  voidedAt: z.iso.datetime().nullable(),
+});
+const medicationStockMovementBackupSchema = z.object({
+  id: z.uuid(),
+  medicationId: z.uuid(),
+  intakeId: z.uuid().nullable(),
+  delta: z
+    .number()
+    .min(-1000000)
+    .max(1000000)
+    .refine((value) => value !== 0),
+  reason: z.enum(['initial', 'restock', 'intake', 'correction']),
+  recordedAt: z.iso.datetime(),
 });
 const taskBackupSchema = taskSchema.extend({
   id: z.uuid(),
@@ -511,6 +631,42 @@ export const backupV5Schema = z
       });
   });
 
+export const backupV6Schema = z
+  .object({
+    schemaVersion: z.literal(6),
+    exportedAt: z.iso.datetime(),
+    careGroup: z.object({ name: cleanText('El nombre del grupo', 120) }),
+    persons: z.array(personBackupSchema).min(1).max(1000),
+    ...backupRecordsSchema,
+    tasks: z.array(taskBackupSchema).max(10000),
+    orders: z.array(orderBackupSchema).max(10000),
+    prescriptions: z.array(prescriptionBackupSchema).max(10000),
+    medicationIntakes: z.array(medicationIntakeBackupSchema).max(100000),
+    medicationStockMovements: z
+      .array(medicationStockMovementBackupSchema)
+      .max(100000),
+  })
+  .superRefine((backup, context) => {
+    const people = new Set(backup.persons.map((person) => person.id));
+    const medications = new Map(
+      backup.medications.map((item) => [item.id, item.personId]),
+    );
+    if (
+      backup.medicationIntakes.some(
+        (item) =>
+          !people.has(item.personId) ||
+          medications.get(item.medicationId) !== item.personId,
+      ) ||
+      backup.medicationStockMovements.some(
+        (item) => !medications.has(item.medicationId),
+      )
+    )
+      context.addIssue({
+        code: 'custom',
+        message: 'El respaldo contiene registros de medicación inválidos',
+      });
+  });
+
 export const backupImportSchema = z
   .union([
     backupV1Schema,
@@ -518,33 +674,46 @@ export const backupImportSchema = z
     backupV3Schema,
     backupV4Schema,
     backupV5Schema,
+    backupV6Schema,
   ])
   .transform((backup): BackupData => {
-    if (backup.schemaVersion === 5) return backup;
+    if (backup.schemaVersion === 6) return backup;
+    const emptyMedicationHistory = {
+      medicationIntakes: [],
+      medicationStockMovements: [],
+    };
+    if (backup.schemaVersion === 5)
+      return {
+        ...backup,
+        schemaVersion: 6 as const,
+        ...emptyMedicationHistory,
+      };
     if (backup.schemaVersion === 4)
       return {
         ...backup,
-        schemaVersion: 5 as const,
+        schemaVersion: 6 as const,
         tasks: backup.tasks.map((task) => ({
           ...task,
           visibleToElder: false,
         })),
+        ...emptyMedicationHistory,
       };
     if (backup.schemaVersion === 3)
       return {
         ...backup,
-        schemaVersion: 5 as const,
+        schemaVersion: 6 as const,
         tasks: backup.tasks.map((task) => ({
           ...task,
           visibleToElder: false,
         })),
         orders: [],
         prescriptions: [],
+        ...emptyMedicationHistory,
       };
     if (backup.schemaVersion === 2)
       return {
         ...backup,
-        schemaVersion: 5 as const,
+        schemaVersion: 6 as const,
         tasks: backup.tasks.map((task) => ({
           ...task,
           visibleToElder: false,
@@ -552,9 +721,10 @@ export const backupImportSchema = z
         careGroup: { name: 'Grupo restaurado' },
         orders: [],
         prescriptions: [],
+        ...emptyMedicationHistory,
       };
     return {
-      schemaVersion: 5 as const,
+      schemaVersion: 6 as const,
       exportedAt: backup.exportedAt,
       careGroup: { name: 'Grupo restaurado' },
       persons: [{ ...backup.person, archived: false }],
@@ -563,6 +733,7 @@ export const backupImportSchema = z
       medications: backup.medications,
       prescriptions: [],
       tasks: backup.tasks.map((task) => ({ ...task, visibleToElder: false })),
+      ...emptyMedicationHistory,
     };
   });
 

@@ -23,6 +23,14 @@ const preferencesSchema = z.object({
     z.literal(7),
     z.literal(14),
   ]),
+  medicationLeadMinutes: z.union([
+    z.literal(-1),
+    z.literal(0),
+    z.literal(15),
+    z.literal(30),
+    z.literal(60),
+  ]),
+  medicationStockEnabled: z.boolean(),
 });
 
 function groupId(request: Request) {
@@ -60,12 +68,15 @@ export async function PATCH(request: Request) {
       .prepare(
         `INSERT INTO alert_preferences
            (user_id, appointment_lead_minutes, task_lead_days,
-            document_lead_days, updated_at)
-         VALUES (?, ?, ?, ?, ?)
+            document_lead_days, medication_lead_minutes,
+            medication_stock_enabled, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(user_id) DO UPDATE SET
            appointment_lead_minutes = excluded.appointment_lead_minutes,
            task_lead_days = excluded.task_lead_days,
            document_lead_days = excluded.document_lead_days,
+           medication_lead_minutes = excluded.medication_lead_minutes,
+           medication_stock_enabled = excluded.medication_stock_enabled,
            updated_at = excluded.updated_at`,
       )
       .bind(
@@ -73,6 +84,8 @@ export async function PATCH(request: Request) {
         preferences.appointmentLeadMinutes,
         preferences.taskLeadDays,
         preferences.documentLeadDays,
+        preferences.medicationLeadMinutes,
+        preferences.medicationStockEnabled ? 1 : 0,
         now,
       )
       .run();

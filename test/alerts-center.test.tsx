@@ -47,6 +47,8 @@ describe('centro de alertas', () => {
           appointmentLeadMinutes: 1440,
           taskLeadDays: 0,
           documentLeadDays: 7,
+          medicationLeadMinutes: 0,
+          medicationStockEnabled: true,
         }}
         onAction={onAction}
         onNavigate={vi.fn()}
@@ -69,6 +71,8 @@ describe('centro de alertas', () => {
       appointmentLeadMinutes: 2880,
       taskLeadDays: 0,
       documentLeadDays: 7,
+      medicationLeadMinutes: 0,
+      medicationStockEnabled: true,
     });
   });
 });

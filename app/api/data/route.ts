@@ -13,6 +13,13 @@ import type {
 import { entitySchema, fieldErrors, recordSchemas } from '@/lib/validation';
 import { requireMembership, requireSameOrigin } from '@/lib/server-auth';
 import { handleApiError, jsonError, readJson } from '@/lib/api-response';
+import { toStockMilli } from '@/lib/medications';
+import {
+  hydrateMedications,
+  MEDICATION_SELECT,
+  type RawMedication,
+  type RawScheduleTime,
+} from '@/lib/server-medications';
 
 const tables: Record<Entity, string> = {
   appointment: 'appointments',
@@ -63,47 +70,63 @@ export async function GET(request: Request): Promise<Response> {
     if (!personResult.ok) return personResult.error;
     const person = personResult.person;
     const db = getD1();
-    const [appointments, orders, medications, prescriptions, tasks] =
-      await Promise.all([
-        db
-          .prepare(
-            'SELECT id, person_id AS personId, specialty, doctor, date, time, place, bring, notes, status, version FROM appointments WHERE person_id = ? ORDER BY date, time',
-          )
-          .bind(person.id)
-          .all<Appointment>(),
-        db
-          .prepare(
-            "SELECT id, person_id AS personId, specialty, reason, requested_by AS requestedBy, issue_date AS issueDate, expiration_date AS expirationDate, notes, status, appointment_id AS appointmentId, used_at AS usedAt, version FROM medical_orders WHERE person_id = ? ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, expiration_date, issue_date",
-          )
-          .bind(person.id)
-          .all<MedicalOrder>(),
-        db
-          .prepare(
-            'SELECT id, person_id AS personId, name, dose, frequency, doctor, notes, active, version FROM medications WHERE person_id = ? ORDER BY active DESC, name',
-          )
-          .bind(person.id)
-          .all<Omit<Medication, 'active'> & { active: number }>(),
-        db
-          .prepare(
-            "SELECT id, person_id AS personId, medication_name AS medicationName, presentation, dose, frequency, duration, prescribed_by AS prescribedBy, issue_date AS issueDate, expiration_date AS expirationDate, notes, status, medication_id AS medicationId, used_at AS usedAt, version FROM prescriptions WHERE person_id = ? ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, expiration_date, issue_date",
-          )
-          .bind(person.id)
-          .all<Prescription>(),
-        db
-          .prepare(
-            "SELECT id, person_id AS personId, title, due_date AS dueDate, priority, status, notes, visible_to_elder AS visibleToElder, version FROM tasks WHERE person_id = ? ORDER BY CASE status WHEN 'Pendiente' THEN 0 ELSE 1 END, CASE WHEN due_date = '' THEN 1 ELSE 0 END, due_date",
-          )
-          .bind(person.id)
-          .all<MedicalTask>(),
-      ]);
+    const [
+      appointments,
+      orders,
+      medications,
+      prescriptions,
+      tasks,
+      medicationTimes,
+    ] = await Promise.all([
+      db
+        .prepare(
+          'SELECT id, person_id AS personId, specialty, doctor, date, time, place, bring, notes, status, version FROM appointments WHERE person_id = ? ORDER BY date, time',
+        )
+        .bind(person.id)
+        .all<Appointment>(),
+      db
+        .prepare(
+          "SELECT id, person_id AS personId, specialty, reason, requested_by AS requestedBy, issue_date AS issueDate, expiration_date AS expirationDate, notes, status, appointment_id AS appointmentId, used_at AS usedAt, version FROM medical_orders WHERE person_id = ? ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, expiration_date, issue_date",
+        )
+        .bind(person.id)
+        .all<MedicalOrder>(),
+      db
+        .prepare(
+          `SELECT ${MEDICATION_SELECT} FROM medications
+             WHERE person_id = ? ORDER BY active DESC, name`,
+        )
+        .bind(person.id)
+        .all<RawMedication>(),
+      db
+        .prepare(
+          "SELECT id, person_id AS personId, medication_name AS medicationName, presentation, dose, frequency, duration, prescribed_by AS prescribedBy, issue_date AS issueDate, expiration_date AS expirationDate, notes, status, medication_id AS medicationId, used_at AS usedAt, version FROM prescriptions WHERE person_id = ? ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, expiration_date, issue_date",
+        )
+        .bind(person.id)
+        .all<Prescription>(),
+      db
+        .prepare(
+          "SELECT id, person_id AS personId, title, due_date AS dueDate, priority, status, notes, visible_to_elder AS visibleToElder, version FROM tasks WHERE person_id = ? ORDER BY CASE status WHEN 'Pendiente' THEN 0 ELSE 1 END, CASE WHEN due_date = '' THEN 1 ELSE 0 END, due_date",
+        )
+        .bind(person.id)
+        .all<MedicalTask>(),
+      db
+        .prepare(
+          `SELECT medication_id AS medicationId, local_time AS localTime
+             FROM medication_schedule_times
+             WHERE medication_id IN (SELECT id FROM medications WHERE person_id = ?)
+             ORDER BY medication_id, position, local_time`,
+        )
+        .bind(person.id)
+        .all<RawScheduleTime>(),
+    ]);
     return Response.json({
       person,
       appointments: appointments.results,
       orders: orders.results,
-      medications: medications.results.map((item) => ({
-        ...item,
-        active: Boolean(item.active),
-      })),
+      medications: hydrateMedications(
+        medications.results,
+        medicationTimes.results,
+      ),
       prescriptions: prescriptions.results,
       tasks: tasks.results.map((item) => ({
         ...item,
@@ -187,22 +210,63 @@ export async function POST(request: Request): Promise<Response> {
       changes = result.meta.changes;
     } else if (entity === 'medication') {
       const item = data as Omit<Medication, 'id' | 'personId'>;
-      const result = await db
-        .prepare(
-          'INSERT INTO medications (id, person_id, name, dose, frequency, doctor, notes, active, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)',
-        )
-        .bind(
-          id,
-          personResult.person.id,
-          item.name,
-          item.dose,
-          item.frequency,
-          item.doctor,
-          item.notes,
-          item.active ? 1 : 0,
-        )
-        .run();
-      changes = result.meta.changes;
+      const statements = [
+        db
+          .prepare(
+            `INSERT INTO medications (
+               id, person_id, name, dose, frequency, doctor, notes, active,
+               schedule_type, start_date, end_date, interval_minutes,
+               interval_anchor_at, presentation, stock_unit,
+               units_per_intake_milli, stock_quantity_milli,
+               reorder_threshold_milli, stock_cycle, version
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+          )
+          .bind(
+            id,
+            personResult.person.id,
+            item.name,
+            item.dose,
+            item.frequency,
+            item.doctor,
+            item.notes,
+            item.active ? 1 : 0,
+            item.scheduleType,
+            item.startDate,
+            item.endDate,
+            item.intervalMinutes,
+            item.intervalAnchorAt,
+            item.presentation,
+            item.stockUnit,
+            toStockMilli(item.unitsPerIntake),
+            toStockMilli(item.stockQuantity),
+            toStockMilli(item.reorderThreshold),
+          ),
+        ...item.scheduleTimes.map((time, position) =>
+          db
+            .prepare(
+              'INSERT INTO medication_schedule_times (id, medication_id, local_time, position) VALUES (?, ?, ?, ?)',
+            )
+            .bind(crypto.randomUUID(), id, time, position),
+        ),
+        ...(item.stockQuantity
+          ? [
+              db
+                .prepare(
+                  `INSERT INTO medication_stock_movements
+                     (id, medication_id, intake_id, delta_milli, reason, recorded_by_user_id, recorded_at)
+                   VALUES (?, ?, NULL, ?, 'initial', NULL, ?)`,
+                )
+                .bind(
+                  crypto.randomUUID(),
+                  id,
+                  toStockMilli(item.stockQuantity),
+                  new Date().toISOString(),
+                ),
+            ]
+          : []),
+      ];
+      const results = await db.batch(statements);
+      changes = results[0]?.meta.changes || 0;
     } else if (entity === 'prescription') {
       const item = data as Omit<
         Prescription,
@@ -347,23 +411,53 @@ export async function PATCH(request: Request): Promise<Response> {
       changes = result.meta.changes;
     } else if (entity === 'medication') {
       const item = data as Omit<Medication, 'id' | 'personId'>;
-      const result = await db
-        .prepare(
-          'UPDATE medications SET name = ?, dose = ?, frequency = ?, doctor = ?, notes = ?, active = ?, version = version + 1 WHERE id = ? AND person_id = ? AND version = ?',
-        )
-        .bind(
-          item.name,
-          item.dose,
-          item.frequency,
-          item.doctor,
-          item.notes,
-          item.active ? 1 : 0,
-          idResult.data,
-          personResult.person.id,
-          version.data,
-        )
-        .run();
-      changes = result.meta.changes;
+      const results = await db.batch([
+        db
+          .prepare(
+            `UPDATE medications SET name = ?, dose = ?, frequency = ?,
+               doctor = ?, notes = ?, active = ?, schedule_type = ?,
+               start_date = ?, end_date = ?, interval_minutes = ?,
+               interval_anchor_at = ?, presentation = ?, stock_unit = ?,
+               units_per_intake_milli = ?, stock_quantity_milli = ?,
+               reorder_threshold_milli = ?, stock_cycle = ?, version = version + 1
+             WHERE id = ? AND person_id = ? AND version = ?`,
+          )
+          .bind(
+            item.name,
+            item.dose,
+            item.frequency,
+            item.doctor,
+            item.notes,
+            item.active ? 1 : 0,
+            item.scheduleType,
+            item.startDate,
+            item.endDate,
+            item.intervalMinutes,
+            item.intervalAnchorAt,
+            item.presentation,
+            item.stockUnit,
+            toStockMilli(item.unitsPerIntake),
+            toStockMilli(item.stockQuantity),
+            toStockMilli(item.reorderThreshold),
+            item.stockCycle || 1,
+            idResult.data,
+            personResult.person.id,
+            version.data,
+          ),
+        db
+          .prepare(
+            'DELETE FROM medication_schedule_times WHERE medication_id = ?',
+          )
+          .bind(idResult.data),
+        ...item.scheduleTimes.map((time, position) =>
+          db
+            .prepare(
+              'INSERT INTO medication_schedule_times (id, medication_id, local_time, position) VALUES (?, ?, ?, ?)',
+            )
+            .bind(crypto.randomUUID(), idResult.data, time, position),
+        ),
+      ]);
+      changes = results[0]?.meta.changes || 0;
     } else if (entity === 'prescription') {
       const item = data as Omit<
         Prescription,

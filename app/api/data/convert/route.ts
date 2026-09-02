@@ -8,6 +8,7 @@ import {
 } from '@/lib/validation';
 import { requireMembership, requireSameOrigin } from '@/lib/server-auth';
 import { handleApiError, jsonError, readJson } from '@/lib/api-response';
+import { toStockMilli } from '@/lib/medications';
 
 const conversionSchema = z.object({
   sourceEntity: z.enum(['order', 'prescription']),
@@ -135,11 +136,16 @@ export async function POST(request: Request) {
           fieldErrors(parsed.error),
         );
       const item = parsed.data as Omit<Medication, 'id' | 'personId'>;
-      const results = await db.batch([
+      const statements = [
         db
           .prepare(
-            `INSERT INTO medications (id, person_id, name, dose, frequency, doctor, notes, active, version)
-             SELECT ?, ?, ?, ?, ?, ?, ?, ?, 1
+            `INSERT INTO medications (
+               id, person_id, name, dose, frequency, doctor, notes, active,
+               schedule_type, start_date, end_date, interval_minutes,
+               interval_anchor_at, presentation, stock_unit,
+               units_per_intake_milli, stock_quantity_milli,
+               reorder_threshold_milli, stock_cycle, version)
+             SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1
              WHERE EXISTS (
                SELECT 1 FROM prescriptions
                WHERE id = ? AND person_id = ? AND status = 'pending'
@@ -155,11 +161,50 @@ export async function POST(request: Request) {
             item.doctor,
             item.notes,
             item.active ? 1 : 0,
+            item.scheduleType,
+            item.startDate,
+            item.endDate,
+            item.intervalMinutes,
+            item.intervalAnchorAt,
+            item.presentation,
+            item.stockUnit,
+            toStockMilli(item.unitsPerIntake),
+            toStockMilli(item.stockQuantity),
+            toStockMilli(item.reorderThreshold),
             body.data.sourceId,
             body.data.personId,
             today,
             body.data.version,
           ),
+        ...item.scheduleTimes.map((time, position) =>
+          db
+            .prepare(
+              `INSERT INTO medication_schedule_times
+                 (id, medication_id, local_time, position)
+               SELECT ?, ?, ?, ? WHERE EXISTS
+                 (SELECT 1 FROM medications WHERE id = ?)`,
+            )
+            .bind(crypto.randomUUID(), targetId, time, position, targetId),
+        ),
+        ...(item.stockQuantity
+          ? [
+              db
+                .prepare(
+                  `INSERT INTO medication_stock_movements
+                     (id, medication_id, intake_id, delta_milli, reason,
+                      recorded_by_user_id, recorded_at)
+                   SELECT ?, ?, NULL, ?, 'initial', NULL, ? WHERE EXISTS
+                     (SELECT 1 FROM medications WHERE id = ?)`,
+                )
+                .bind(
+                  crypto.randomUUID(),
+                  targetId,
+                  toStockMilli(item.stockQuantity),
+                  usedAt,
+                  targetId,
+                ),
+            ]
+          : []),
         db
           .prepare(
             `UPDATE prescriptions
@@ -177,8 +222,9 @@ export async function POST(request: Request) {
             body.data.version,
             targetId,
           ),
-      ]);
-      if (!results[0].meta.changes || !results[1].meta.changes)
+      ];
+      const results = await db.batch(statements);
+      if (!results[0].meta.changes || !results[results.length - 1].meta.changes)
         return jsonError('La receta ya no está disponible para convertir', 409);
     }
     return Response.json({ id: targetId }, { status: 201 });

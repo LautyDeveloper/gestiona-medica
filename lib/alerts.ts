@@ -10,6 +10,8 @@ export const DEFAULT_ALERT_PREFERENCES: AlertPreferences = {
   appointmentLeadMinutes: 1440,
   taskLeadDays: 0,
   documentLeadDays: 7,
+  medicationLeadMinutes: 0,
+  medicationStockEnabled: true,
 };
 
 export type AlertSource =
@@ -46,6 +48,25 @@ export type AlertSource =
       personName: string;
       medicationName: string;
       expirationDate: string;
+    }
+  | {
+      kind: 'medication-dose';
+      id: string;
+      personId: string;
+      personName: string;
+      medicationName: string;
+      dose: string;
+      scheduledFor: string;
+    }
+  | {
+      kind: 'medication-stock';
+      id: string;
+      personId: string;
+      personName: string;
+      medicationName: string;
+      stockQuantity: number;
+      stockUnit: string;
+      stockCycle: number;
     };
 
 export type StoredAlertState = {
@@ -123,6 +144,42 @@ function makeAlert(
       ...stateFor(stored, now),
     };
   }
+  if (source.kind === 'medication-dose') {
+    const relevantAt = source.scheduledFor;
+    const date = new Intl.DateTimeFormat('en-CA', {
+      timeZone: ARGENTINA_TIME_ZONE,
+    }).format(new Date(relevantAt));
+    return {
+      id: `${source.kind}:${source.id}:${source.scheduledFor}`,
+      kind: source.kind,
+      entityId: source.id,
+      personId: source.personId,
+      personName: source.personName,
+      title: source.medicationName,
+      detail: `${source.dose} · horario registrado ${new Intl.DateTimeFormat('es-AR', { timeZone: ARGENTINA_TIME_ZONE, hour: '2-digit', minute: '2-digit' }).format(new Date(relevantAt))}`,
+      relevantAt,
+      targetSection: 'medications',
+      urgency:
+        new Date(relevantAt) <= now ? 'overdue' : urgencyForDate(date, today),
+      ...stateFor(stored, now),
+    };
+  }
+  if (source.kind === 'medication-stock') {
+    const relevantAt = now.toISOString();
+    return {
+      id: `${source.kind}:${source.id}:${source.stockCycle}`,
+      kind: source.kind,
+      entityId: source.id,
+      personId: source.personId,
+      personName: source.personName,
+      title: `Reponer ${source.medicationName}`,
+      detail: `Cantidad estimada: ${source.stockQuantity} ${source.stockUnit}`,
+      relevantAt,
+      targetSection: 'medications',
+      urgency: 'today',
+      ...stateFor(stored, now),
+    };
+  }
   const relevantDate =
     source.kind === 'task' ? source.dueDate : source.expirationDate;
   const common = {
@@ -179,6 +236,16 @@ export function deriveAlerts({
       included =
         instant <=
         new Date(now.getTime() + preferences.appointmentLeadMinutes * 60_000);
+    } else if (source.kind === 'medication-dose') {
+      if (preferences.medicationLeadMinutes === -1) return [];
+      const instant = new Date(source.scheduledFor);
+      included =
+        instant <=
+          new Date(
+            now.getTime() + preferences.medicationLeadMinutes * 60_000,
+          ) && instant >= new Date(now.getTime() - 24 * 60 * 60_000);
+    } else if (source.kind === 'medication-stock') {
+      included = preferences.medicationStockEnabled;
     } else {
       const relevantDate =
         source.kind === 'task' ? source.dueDate : source.expirationDate;

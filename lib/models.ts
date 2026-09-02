@@ -21,7 +21,13 @@ export type ElderSection =
   | 'medications'
   | 'tasks'
   | 'alerts';
-export type AlertKind = 'appointment' | 'task' | 'order' | 'prescription';
+export type AlertKind =
+  | 'appointment'
+  | 'task'
+  | 'order'
+  | 'prescription'
+  | 'medication-dose'
+  | 'medication-stock';
 export type AlertState = 'active' | 'snoozed' | 'read';
 export type AlertUrgency = 'upcoming' | 'today' | 'overdue';
 
@@ -29,6 +35,8 @@ export interface AlertPreferences {
   appointmentLeadMinutes: -1 | 1440 | 2880 | 10080;
   taskLeadDays: -1 | 0 | 1 | 3;
   documentLeadDays: -1 | 3 | 7 | 14;
+  medicationLeadMinutes: -1 | 0 | 15 | 30 | 60;
+  medicationStockEnabled: boolean;
 }
 
 export interface Alert {
@@ -42,7 +50,7 @@ export interface Alert {
   relevantAt: string;
   targetSection: Extract<
     Section,
-    'appointments' | 'tasks' | 'orders' | 'prescriptions'
+    'appointments' | 'tasks' | 'orders' | 'prescriptions' | 'medications'
   >;
   state: AlertState;
   urgency: AlertUrgency;
@@ -132,7 +140,60 @@ export interface Medication {
   doctor: string;
   notes: string;
   active: boolean;
+  scheduleType: MedicationScheduleType;
+  scheduleTimes: string[];
+  startDate: string;
+  endDate: string;
+  intervalMinutes: number | null;
+  intervalAnchorAt: string;
+  presentation: string;
+  stockUnit: string;
+  unitsPerIntake: number | null;
+  stockQuantity: number | null;
+  reorderThreshold: number | null;
+  stockCycle?: number;
   version?: number;
+}
+export type MedicationScheduleType =
+  | 'unstructured'
+  | 'fixed_times'
+  | 'interval'
+  | 'as_needed';
+export type MedicationIntakeStatus = 'taken' | 'not_taken';
+export interface MedicationIntake {
+  id: string;
+  medicationId: string;
+  personId: string;
+  scheduledFor: string | null;
+  reportedAt: string;
+  status: MedicationIntakeStatus;
+  notes: string;
+  recordedByName: string;
+  createdAt: string;
+  voidedAt: string | null;
+}
+export interface MedicationStockMovement {
+  id: string;
+  medicationId: string;
+  intakeId: string | null;
+  delta: number;
+  reason: 'initial' | 'restock' | 'intake' | 'correction';
+  recordedAt: string;
+}
+export interface MedicationOccurrence {
+  id: string;
+  medicationId: string;
+  medicationName: string;
+  dose: string;
+  scheduledFor: string | null;
+  status: 'upcoming' | 'unrecorded' | 'taken' | 'not_taken' | 'as_needed';
+  intake: MedicationIntake | null;
+}
+export interface MedicationTodayData {
+  personId: string;
+  date: string;
+  occurrences: MedicationOccurrence[];
+  recentIntakes: MedicationIntake[];
 }
 export type DocumentStatus = 'pending' | 'used';
 export interface MedicalOrder {
@@ -207,13 +268,15 @@ export interface BackupDataV1 {
 }
 
 export interface BackupData {
-  schemaVersion: 5;
+  schemaVersion: 6;
   exportedAt: string;
   careGroup: { name: string };
   persons: Omit<Person, 'careGroupId' | 'version' | 'access'>[];
   appointments: Omit<Appointment, 'version'>[];
   orders: Omit<MedicalOrder, 'version'>[];
   medications: Omit<Medication, 'version'>[];
+  medicationIntakes: MedicationIntake[];
+  medicationStockMovements: MedicationStockMovement[];
   prescriptions: Omit<Prescription, 'version'>[];
   tasks: Omit<MedicalTask, 'version'>[];
 }
