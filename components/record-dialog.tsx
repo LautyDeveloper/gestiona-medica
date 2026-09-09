@@ -21,6 +21,7 @@ import { Switch } from '@/components/ui/switch';
 import type {
   Appointment,
   Entity,
+  MedicalFeedback,
   MedicalOrder,
   MedicalTask,
   Medication,
@@ -31,6 +32,7 @@ import { normalizeAppointmentTime, recordSchemas } from '@/lib/validation';
 
 type RecordValue =
   | Appointment
+  | MedicalFeedback
   | MedicalOrder
   | Medication
   | Prescription
@@ -53,6 +55,12 @@ const emptyValues: Record<Entity, Record<string, unknown>> = {
     bring: '',
     notes: '',
     status: 'Próximo',
+  },
+  feedback: {
+    doctor: '',
+    date: today,
+    content: '',
+    appointmentId: null,
   },
   order: {
     specialty: '',
@@ -112,6 +120,11 @@ const labels: Record<
     edit: 'Editar turno',
     description: 'Guardá la información práctica del turno.',
   },
+  feedback: {
+    new: 'Nueva devolución',
+    edit: 'Editar devolución',
+    description: 'Guardá lo que indicó el médico en la consulta.',
+  },
   order: {
     new: 'Nueva orden médica',
     edit: 'Editar orden médica',
@@ -170,6 +183,7 @@ export function RecordDialog({
   onOpenChange,
   onSave,
   initialData,
+  appointments = [],
   canShowToElder = false,
 }: {
   entity: Entity;
@@ -183,6 +197,7 @@ export function RecordDialog({
     id?: string,
   ) => Promise<void>;
   initialData?: Record<string, unknown>;
+  appointments?: Appointment[];
   canShowToElder?: boolean;
 }) {
   const [form, setForm] = useState<Record<string, unknown>>(() =>
@@ -326,6 +341,62 @@ export function RecordDialog({
                   <NativeSelectOption>Realizado</NativeSelectOption>
                   <NativeSelectOption>Cancelado</NativeSelectOption>
                 </NativeSelect>
+              </Field>
+            </>
+          )}
+          {entity === 'feedback' && (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Médico" required error={errors.doctor}>
+                  <Input
+                    required
+                    value={text('doctor')}
+                    onChange={(e) => update('doctor', e.target.value)}
+                    placeholder="Ej. Dra. Laura Pérez"
+                  />
+                </Field>
+                <Field label="Fecha" required error={errors.date}>
+                  <Input
+                    required
+                    type="date"
+                    value={text('date')}
+                    onChange={(e) => update('date', e.target.value)}
+                  />
+                </Field>
+              </div>
+              <Field
+                label="Turno relacionado (opcional)"
+                error={errors.appointmentId}
+              >
+                <NativeSelect
+                  className="w-full"
+                  value={text('appointmentId')}
+                  onChange={(e) =>
+                    update('appointmentId', e.target.value || null)
+                  }
+                >
+                  <NativeSelectOption value="">
+                    Sin turno relacionado
+                  </NativeSelectOption>
+                  {appointments.map((appointment) => (
+                    <NativeSelectOption
+                      key={appointment.id}
+                      value={appointment.id}
+                    >
+                      {appointment.date} · {appointment.specialty} ·{' '}
+                      {appointment.doctor}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field label="Devolución" required error={errors.content}>
+                <Textarea
+                  required
+                  className="min-h-36"
+                  value={text('content')}
+                  onChange={(e) => update('content', e.target.value)}
+                  placeholder="Indicaciones, observaciones y próximos pasos..."
+                />
               </Field>
             </>
           )}
@@ -864,13 +935,15 @@ export function RecordDialog({
               )}
             </>
           )}
-          <Field label="Notas (opcional)">
-            <Textarea
-              value={text('notes')}
-              onChange={(e) => update('notes', e.target.value)}
-              placeholder="Agregá una aclaración útil"
-            />
-          </Field>
+          {entity !== 'feedback' && (
+            <Field label="Notas (opcional)">
+              <Textarea
+                value={text('notes')}
+                onChange={(e) => update('notes', e.target.value)}
+                placeholder="Agregá una aclaración útil"
+              />
+            </Field>
+          )}
         </form>
         <DialogFooter className="-mx-5 -mb-5 mt-1 sm:-mx-6 sm:-mb-6">
           <Button

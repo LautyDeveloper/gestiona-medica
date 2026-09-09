@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { RecordDialog } from '@/components/record-dialog';
 import {
   AppointmentsView,
+  FeedbackView,
   HomeView,
   MedicationsView,
   TasksView,
@@ -88,6 +89,7 @@ import type {
   MedicationIntakeStatus,
   MedicationOccurrence,
   MedicationTodayData,
+  Appointment,
 } from '@/lib/models';
 import { chooseActivePerson } from '@/lib/person-selection';
 import { DEFAULT_ALERT_PREFERENCES } from '@/lib/alerts';
@@ -127,6 +129,10 @@ function OrganizerContent() {
     source: ConversionSource;
     initialData: Record<string, unknown>;
   } | null>(null);
+  const [feedbackInitialData, setFeedbackInitialData] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
   const [personDialog, setPersonDialog] = useState<{
     open: boolean;
     person: Person | null;
@@ -367,13 +373,25 @@ function OrganizerContent() {
 
   function openNew(entity: Entity) {
     setConversion(null);
+    setFeedbackInitialData(null);
     setDialog({ open: true, entity, value: null });
   }
   function openEdit(entity: Entity, value: RecordValue) {
     setConversion(null);
+    setFeedbackInitialData(null);
     setDialog({ open: true, entity, value });
   }
+  function openAppointmentFeedback(appointment: Appointment) {
+    setConversion(null);
+    setDialog({ open: true, entity: 'feedback', value: null });
+    setFeedbackInitialData({
+      appointmentId: appointment.id,
+      doctor: appointment.doctor,
+      date: appointment.date,
+    });
+  }
   function openConversion(source: ConversionSource) {
+    setFeedbackInitialData(null);
     const initialData =
       source.entity === 'order'
         ? {
@@ -869,15 +887,17 @@ function OrganizerContent() {
 
   function requestDelete(entity: Entity, item: RecordValue) {
     const label =
-      'reason' in item
-        ? `la orden de ${item.specialty}`
-        : 'specialty' in item
-          ? `el turno de ${item.specialty}`
-          : 'medicationName' in item
-            ? `la receta de ${item.medicationName}`
-            : 'active' in item
-              ? item.name
-              : item.title;
+      'content' in item
+        ? `la devolución de ${item.doctor}`
+        : 'reason' in item
+          ? `la orden de ${item.specialty}`
+          : 'specialty' in item
+            ? `el turno de ${item.specialty}`
+            : 'medicationName' in item
+              ? `la receta de ${item.medicationName}`
+              : 'active' in item
+                ? item.name
+                : item.title;
     setDeleteTarget({ entity, id: item.id, personId: item.personId, label });
   }
 
@@ -1205,11 +1225,24 @@ function OrganizerContent() {
                   }
                   onExport={() => void downloadCalendar()}
                   onExportOne={(item) => void downloadCalendar(item.id)}
+                  onFeedback={openAppointmentFeedback}
                   onDelete={(id) => {
                     const item = data.appointments.find(
                       (value) => value.id === id,
                     );
                     if (item) requestDelete('appointment', item);
+                  }}
+                />
+              )}{' '}
+              {section === 'feedback' && (
+                <FeedbackView
+                  items={data.feedback}
+                  appointments={data.appointments}
+                  onNew={() => openNew('feedback')}
+                  onEdit={(item) => openEdit('feedback', item)}
+                  onDelete={(id) => {
+                    const item = data.feedback.find((value) => value.id === id);
+                    if (item) requestDelete('feedback', item);
                   }}
                 />
               )}{' '}
@@ -1345,6 +1378,7 @@ function OrganizerContent() {
                   (
                     [
                       'orders',
+                      'feedback',
                       'prescriptions',
                       'tasks',
                       'alerts',
@@ -1362,7 +1396,7 @@ function OrganizerContent() {
         </DropdownMenu>
       </nav>
       <RecordDialog
-        key={`${dialog.entity}-${dialog.value?.id || conversion?.source.item.id || 'new'}-${dialog.open}-${activePerson.id}`}
+        key={`${dialog.entity}-${dialog.value?.id || conversion?.source.item.id || (typeof feedbackInitialData?.appointmentId === 'string' ? feedbackInitialData.appointmentId : 'new')}-${dialog.open}-${activePerson.id}`}
         entity={dialog.entity}
         personId={activePerson.id}
         value={dialog.value}
@@ -1370,9 +1404,13 @@ function OrganizerContent() {
         onOpenChange={(open) => {
           setDialog((current) => ({ ...current, open }));
           if (!open) setConversion(null);
+          if (!open) setFeedbackInitialData(null);
         }}
         onSave={conversion ? convertDocument : save}
-        initialData={conversion?.initialData}
+        initialData={
+          conversion?.initialData || feedbackInitialData || undefined
+        }
+        appointments={data?.appointments || []}
         canShowToElder={Boolean(activePerson.access)}
       />
       <MedicationRestockDialog

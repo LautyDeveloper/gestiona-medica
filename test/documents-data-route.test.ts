@@ -68,6 +68,28 @@ afterEach(() => {
 });
 
 describe('CRUD de órdenes y recetas', () => {
+  it('crea una devolución vinculada a un turno de la persona', async () => {
+    const db = fakeDb();
+    mocks.getD1.mockReturnValue(db);
+    const response = await POST(
+      jsonRequest('POST', {
+        entity: 'feedback',
+        personId,
+        careGroupId: groupId,
+        data: {
+          doctor: 'Dra. Pérez',
+          date: '2026-09-01',
+          content: 'Continuar tratamiento.',
+          appointmentId: recordId,
+        },
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(db.executed[0]?.sql).toContain('INSERT INTO medical_feedback');
+    expect(db.executed[0]?.values).toContain(recordId);
+  });
+
   it('crea una orden pendiente para la persona autorizada', async () => {
     const db = fakeDb();
     mocks.getD1.mockReturnValue(db);
