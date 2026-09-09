@@ -3,10 +3,12 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import {
+  ArrowRight,
   CalendarDays,
   CalendarPlus,
   Check,
   CheckCircle2,
+  ClipboardPlus,
   Clock3,
   MapPin,
   Pencil,
@@ -34,6 +36,66 @@ import { dueLabel, formatDate, formatLongDate } from '@/lib/format';
 
 type EditFn = (value: Appointment | Medication | MedicalTask) => void;
 
+function HomeSummaryCard({
+  title,
+  count,
+  countLabel,
+  icon,
+  tone,
+  children,
+  empty,
+  onViewAll,
+}: {
+  title: string;
+  count: number;
+  countLabel: string;
+  icon: ReactNode;
+  tone: 'medication' | 'order' | 'task';
+  children: ReactNode;
+  empty: string;
+  onViewAll: () => void;
+}) {
+  const tones = {
+    medication: 'bg-medication/12 text-medication ring-medication/15',
+    order: 'bg-order/12 text-order ring-order/15',
+    task: 'bg-task/12 text-task ring-task/15',
+  };
+
+  return (
+    <article className="app-surface flex min-h-64 flex-col rounded-2xl p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span
+            className={`grid size-10 shrink-0 place-items-center rounded-xl ring-1 ${tones[tone]}`}
+          >
+            {icon}
+          </span>
+          <div>
+            <h3 className="font-semibold">{title}</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {count} {countLabel}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={onViewAll}
+          className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+          aria-label={`Ver ${title.toLocaleLowerCase('es')}`}
+        >
+          Ver todo <ArrowRight className="size-3.5" />
+        </button>
+      </div>
+      {count > 0 ? (
+        <div className="mt-4 divide-y">{children}</div>
+      ) : (
+        <p className="my-auto py-7 text-sm leading-6 text-muted-foreground">
+          {empty}
+        </p>
+      )}
+    </article>
+  );
+}
+
 export function HomeView({
   data,
   navigate,
@@ -47,10 +109,17 @@ export function HomeView({
     .filter((a) => a.status === 'Próximo')
     .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
   const next = appointments[0];
-  const pending = data.tasks
+  const activeMedications = data.medications
+    .filter((medication) => medication.active)
+    .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  const pendingOrders = data.orders
+    .filter((order) => order.status === 'pending')
+    .sort((a, b) =>
+      (a.expirationDate || '9999').localeCompare(b.expirationDate || '9999'),
+    );
+  const pendingTasks = data.tasks
     .filter((task) => task.status === 'Pendiente')
-    .sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'))
-    .slice(0, 4);
+    .sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999'));
   if (
     data.appointments.length === 0 &&
     data.feedback.length === 0 &&
@@ -103,44 +172,43 @@ export function HomeView({
           Todo en orden, de un vistazo.
         </h2>
       </div>
-      <section
-        className="grid gap-5 lg:grid-cols-[1.35fr_.9fr]"
-        aria-label="Resumen principal"
-      >
+      <section aria-label="Próximo turno">
         {next ? (
-          <article className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary via-primary to-prescription p-6 text-primary-foreground shadow-[var(--shadow-elevated)] ring-1 ring-white/10 sm:p-8">
+          <article className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary via-primary to-prescription p-6 text-primary-foreground shadow-[var(--shadow-elevated)] ring-1 ring-white/10 sm:p-7">
             <div
               className="absolute -right-12 -top-16 size-52 rounded-full border-[38px] border-primary-foreground/[.07]"
               aria-hidden="true"
             />
-            <div className="relative">
-              <div className="flex items-center justify-between">
-                <span className="rounded-full bg-primary-foreground/12 px-3 py-1 text-xs font-semibold ring-1 ring-primary-foreground/10">
-                  Próximo turno
-                </span>
-                <span className="text-sm text-primary-foreground/75">
-                  {formatDate(next.date)}
-                </span>
+            <div className="relative grid gap-6 sm:grid-cols-[1fr_auto] sm:items-end">
+              <div>
+                <div className="flex items-center gap-3">
+                  <span className="rounded-full bg-primary-foreground/12 px-3 py-1 text-xs font-semibold ring-1 ring-primary-foreground/10">
+                    Próximo turno
+                  </span>
+                  <span className="text-sm text-primary-foreground/75">
+                    {formatDate(next.date)}
+                  </span>
+                </div>
+                <h3 className="mt-6 text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">
+                  {next.specialty}
+                </h3>
+                <p className="mt-1 text-base text-primary-foreground/80">
+                  {next.doctor}
+                </p>
+                <div className="mt-5 flex flex-wrap gap-x-5 gap-y-3 text-sm">
+                  <span className="flex items-center gap-2 capitalize">
+                    <CalendarDays className="size-4" />{' '}
+                    {formatLongDate(next.date)}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <Clock3 className="size-4" /> {next.time}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <MapPin className="size-4" /> {next.place}
+                  </span>
+                </div>
               </div>
-              <h3 className="mt-8 text-3xl font-semibold tracking-[-0.03em]">
-                {next.specialty}
-              </h3>
-              <p className="mt-1 text-base text-primary-foreground/80">
-                {next.doctor}
-              </p>
-              <div className="mt-7 flex flex-wrap gap-x-5 gap-y-3 text-sm">
-                <span className="flex items-center gap-2 capitalize">
-                  <CalendarDays className="size-4" />{' '}
-                  {formatLongDate(next.date)}
-                </span>
-                <span className="flex items-center gap-2">
-                  <Clock3 className="size-4" /> {next.time}
-                </span>
-                <span className="flex items-center gap-2">
-                  <MapPin className="size-4" /> {next.place}
-                </span>
-              </div>
-              <div className="mt-7 rounded-2xl bg-primary-foreground/10 p-4 ring-1 ring-primary-foreground/10 backdrop-blur-sm">
+              <div className="rounded-2xl bg-primary-foreground/10 p-4 ring-1 ring-primary-foreground/10 backdrop-blur-sm sm:w-64">
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary-foreground/65">
                   Qué llevar
                 </p>
@@ -149,7 +217,7 @@ export function HomeView({
             </div>
           </article>
         ) : (
-          <article className="app-surface grid min-h-72 place-items-center rounded-3xl p-8 text-center">
+          <article className="app-surface grid min-h-52 place-items-center rounded-3xl p-8 text-center">
             <div>
               <CheckCircle2 className="mx-auto size-8 text-primary" />
               <h3 className="mt-3 font-semibold">No hay turnos próximos</h3>
@@ -159,77 +227,78 @@ export function HomeView({
             </div>
           </article>
         )}
-        <article className="app-surface rounded-3xl p-6 sm:p-7">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold">Pendientes próximos</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {pending.length} {pending.length === 1 ? 'cosa' : 'cosas'} por
-                resolver
-              </p>
-            </div>
-            <CheckCircle2 className="size-5 text-task" />
-          </div>
-          <div className="mt-5 divide-y">
-            {pending.map((task) => (
-              <div
-                key={task.id}
-                className="flex gap-3 py-4 first:pt-1 last:pb-0"
-              >
-                <span className="mt-1 grid size-5 shrink-0 place-items-center rounded-full border-2 border-task/35">
-                  <span className="size-1.5 rounded-full bg-task" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium leading-5">{task.title}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {dueLabel(task.dueDate)} · {task.priority}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-          {pending.length === 0 && (
-            <p className="mt-8 text-sm text-muted-foreground">
-              No hay pendientes abiertos.
-            </p>
-          )}
-        </article>
       </section>
-      <section className="mt-8">
-        <div className="mb-4 flex items-end justify-between">
-          <div>
-            <h3 className="text-lg font-semibold tracking-tight">
-              Próximos turnos
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Lo que sigue después
-            </p>
-          </div>
-          <button
-            onClick={() => navigate('appointments')}
-            className="text-sm font-medium text-primary hover:underline"
+      <section className="mt-7" aria-labelledby="home-follow-up-title">
+        <div className="mb-4">
+          <h3
+            id="home-follow-up-title"
+            className="text-lg font-semibold tracking-tight"
           >
-            Ver turnos
-          </button>
+            En seguimiento
+          </h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            El estado actual, sin entrar en cada sección
+          </p>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {appointments.slice(1, 3).map((appointment) => (
-            <div
-              key={appointment.id}
-              className="app-surface interactive-surface flex items-center gap-4 rounded-2xl p-4"
-            >
-              <div className="grid size-12 shrink-0 place-items-center rounded-xl bg-appointment/12 text-appointment ring-1 ring-appointment/15">
-                <CalendarDays className="size-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-medium">{appointment.specialty}</p>
-                <p className="mt-1 truncate text-sm text-muted-foreground">
-                  {appointment.doctor} · {formatDate(appointment.date)},{' '}
-                  {appointment.time}
+        <div className="grid gap-4 lg:grid-cols-3">
+          <HomeSummaryCard
+            title="Medicamentos"
+            count={activeMedications.length}
+            countLabel={activeMedications.length === 1 ? 'activo' : 'activos'}
+            icon={<Pill className="size-5" />}
+            tone="medication"
+            empty="No hay tratamientos activos."
+            onViewAll={() => navigate('medications')}
+          >
+            {activeMedications.slice(0, 2).map((medication) => (
+              <div key={medication.id} className="py-3 first:pt-1 last:pb-0">
+                <p className="truncate text-sm font-medium">
+                  {medication.name}
+                </p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">
+                  {medication.dose} · {medication.frequency}
                 </p>
               </div>
-            </div>
-          ))}
+            ))}
+          </HomeSummaryCard>
+          <HomeSummaryCard
+            title="Órdenes"
+            count={pendingOrders.length}
+            countLabel={pendingOrders.length === 1 ? 'pendiente' : 'pendientes'}
+            icon={<ClipboardPlus className="size-5" />}
+            tone="order"
+            empty="No hay órdenes pendientes."
+            onViewAll={() => navigate('orders')}
+          >
+            {pendingOrders.slice(0, 2).map((order) => (
+              <div key={order.id} className="py-3 first:pt-1 last:pb-0">
+                <p className="truncate text-sm font-medium">
+                  {order.specialty}
+                </p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">
+                  {order.reason} · Vence {formatDate(order.expirationDate)}
+                </p>
+              </div>
+            ))}
+          </HomeSummaryCard>
+          <HomeSummaryCard
+            title="Pendientes"
+            count={pendingTasks.length}
+            countLabel={pendingTasks.length === 1 ? 'abierto' : 'abiertos'}
+            icon={<CheckCircle2 className="size-5" />}
+            tone="task"
+            empty="No hay pendientes abiertos."
+            onViewAll={() => navigate('tasks')}
+          >
+            {pendingTasks.slice(0, 2).map((task) => (
+              <div key={task.id} className="py-3 first:pt-1 last:pb-0">
+                <p className="truncate text-sm font-medium">{task.title}</p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">
+                  {dueLabel(task.dueDate)} · {task.priority}
+                </p>
+              </div>
+            ))}
+          </HomeSummaryCard>
         </div>
       </section>
     </div>

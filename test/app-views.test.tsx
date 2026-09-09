@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   AppointmentsView,
   FeedbackView,
+  HomeView,
   MedicationsView,
   TasksView,
 } from '@/components/app-views';
@@ -11,9 +12,96 @@ import {
   OrdersView,
   PrescriptionsView,
 } from '@/components/medical-document-views';
+import type { AppData } from '@/lib/models';
 
 const noop = vi.fn();
 const personId = '11111111-1111-4111-8111-111111111111';
+
+describe('resumen del inicio', () => {
+  it('muestra una síntesis acotada y permite abrir cada sección', async () => {
+    const navigate = vi.fn();
+    const medication = {
+      id: 'm1',
+      personId,
+      name: 'Losartán',
+      dose: '50 mg',
+      frequency: 'Una vez por día',
+      doctor: 'Dra. A',
+      notes: '',
+      active: true,
+      scheduleType: 'unstructured' as const,
+      scheduleTimes: [],
+      startDate: '',
+      endDate: '',
+      intervalMinutes: null,
+      intervalAnchorAt: '',
+      presentation: '',
+      stockUnit: '',
+      unitsPerIntake: null,
+      stockQuantity: null,
+      reorderThreshold: null,
+    };
+    const data: AppData = {
+      person: {
+        id: personId,
+        name: 'Ana',
+        birthDate: '',
+        relationship: '',
+        notes: '',
+        archived: false,
+      },
+      appointments: [],
+      feedback: [],
+      prescriptions: [],
+      medications: [
+        medication,
+        { ...medication, id: 'm2', name: 'Aspirina' },
+        { ...medication, id: 'm3', name: 'Vitamina D' },
+      ],
+      orders: [
+        {
+          id: 'o1',
+          personId,
+          specialty: 'Cardiología',
+          reason: 'Control anual',
+          requestedBy: 'Dra. A',
+          issueDate: '2026-09-01',
+          expirationDate: '2026-10-01',
+          notes: '',
+          status: 'pending',
+          appointmentId: null,
+          usedAt: null,
+        },
+      ],
+      tasks: [
+        {
+          id: 't1',
+          personId,
+          title: 'Retirar resultados',
+          dueDate: '2026-09-12',
+          priority: 'Importante',
+          status: 'Pendiente',
+          notes: '',
+          visibleToElder: false,
+        },
+      ],
+    };
+
+    render(<HomeView data={data} navigate={navigate} onNew={noop} />);
+
+    expect(screen.getByText('3 activos')).toBeInTheDocument();
+    expect(screen.getByText('1 pendiente')).toBeInTheDocument();
+    expect(screen.getByText('1 abierto')).toBeInTheDocument();
+    expect(screen.getByText('Aspirina')).toBeInTheDocument();
+    expect(screen.getByText('Losartán')).toBeInTheDocument();
+    expect(screen.queryByText('Vitamina D')).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Ver medicamentos' }),
+    );
+    expect(navigate).toHaveBeenCalledWith('medications');
+  });
+});
 
 describe('filtros de listas', () => {
   it('abre turnos próximos y permite ver realizados', async () => {
