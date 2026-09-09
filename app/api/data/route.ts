@@ -5,6 +5,7 @@ import type {
   Appointment,
   Entity,
   MedicalOrder,
+  MedicalFeedback,
   MedicalTask,
   Medication,
   Person,
@@ -23,6 +24,7 @@ import {
 
 const tables: Record<Entity, string> = {
   appointment: 'appointments',
+  feedback: 'medical_feedback',
   order: 'medical_orders',
   medication: 'medications',
   prescription: 'prescriptions',
@@ -72,6 +74,7 @@ export async function GET(request: Request): Promise<Response> {
     const db = getD1();
     const [
       appointments,
+      feedback,
       orders,
       medications,
       prescriptions,
@@ -84,6 +87,12 @@ export async function GET(request: Request): Promise<Response> {
         )
         .bind(person.id)
         .all<Appointment>(),
+      db
+        .prepare(
+          'SELECT id, person_id AS personId, doctor, date, content, appointment_id AS appointmentId, version FROM medical_feedback WHERE person_id = ? ORDER BY date DESC, id DESC',
+        )
+        .bind(person.id)
+        .all<MedicalFeedback>(),
       db
         .prepare(
           "SELECT id, person_id AS personId, specialty, reason, requested_by AS requestedBy, issue_date AS issueDate, expiration_date AS expirationDate, notes, status, appointment_id AS appointmentId, used_at AS usedAt, version FROM medical_orders WHERE person_id = ? ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, expiration_date, issue_date",
@@ -122,6 +131,7 @@ export async function GET(request: Request): Promise<Response> {
     return Response.json({
       person,
       appointments: appointments.results,
+      feedback: feedback.results,
       orders: orders.results,
       medications: hydrateMedications(
         medications.results,
@@ -184,6 +194,29 @@ export async function POST(request: Request): Promise<Response> {
           item.bring,
           item.notes,
           item.status,
+        )
+        .run();
+      changes = result.meta.changes;
+    } else if (entity === 'feedback') {
+      const item = data as Omit<MedicalFeedback, 'id' | 'personId'>;
+      const result = await db
+        .prepare(
+          `INSERT INTO medical_feedback (id, person_id, doctor, date, content, appointment_id, version)
+           SELECT ?, ?, ?, ?, ?, ?, 1
+           WHERE ? IS NULL OR EXISTS (
+             SELECT 1 FROM appointments WHERE id = ? AND person_id = ?
+           )`,
+        )
+        .bind(
+          id,
+          personResult.person.id,
+          item.doctor,
+          item.date,
+          item.content,
+          item.appointmentId,
+          item.appointmentId,
+          item.appointmentId,
+          personResult.person.id,
         )
         .run();
       changes = result.meta.changes;
@@ -384,6 +417,31 @@ export async function PATCH(request: Request): Promise<Response> {
           idResult.data,
           personResult.person.id,
           version.data,
+        )
+        .run();
+      changes = result.meta.changes;
+    } else if (entity === 'feedback') {
+      const item = data as Omit<MedicalFeedback, 'id' | 'personId'>;
+      const result = await db
+        .prepare(
+          `UPDATE medical_feedback
+           SET doctor = ?, date = ?, content = ?, appointment_id = ?, version = version + 1
+           WHERE id = ? AND person_id = ? AND version = ?
+             AND (? IS NULL OR EXISTS (
+               SELECT 1 FROM appointments WHERE id = ? AND person_id = ?
+             ))`,
+        )
+        .bind(
+          item.doctor,
+          item.date,
+          item.content,
+          item.appointmentId,
+          idResult.data,
+          personResult.person.id,
+          version.data,
+          item.appointmentId,
+          item.appointmentId,
+          personResult.person.id,
         )
         .run();
       changes = result.meta.changes;

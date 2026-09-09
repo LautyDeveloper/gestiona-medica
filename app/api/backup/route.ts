@@ -3,6 +3,7 @@ import type {
   Appointment,
   BackupData,
   MedicalOrder,
+  MedicalFeedback,
   MedicalTask,
   MedicationIntake,
   MedicationStockMovement,
@@ -53,6 +54,7 @@ export async function GET(request: Request) {
       group,
       people,
       appointments,
+      feedback,
       orders,
       medications,
       prescriptions,
@@ -77,6 +79,12 @@ export async function GET(request: Request) {
         )
         .bind(careGroupId)
         .all<Appointment>(),
+      db
+        .prepare(
+          'SELECT f.id, f.person_id AS personId, f.doctor, f.date, f.content, f.appointment_id AS appointmentId FROM medical_feedback f JOIN persons p ON p.id = f.person_id WHERE p.care_group_id = ? ORDER BY f.person_id, f.date',
+        )
+        .bind(careGroupId)
+        .all<MedicalFeedback>(),
       db
         .prepare(
           'SELECT o.id, o.person_id AS personId, o.specialty, o.reason, o.requested_by AS requestedBy, o.issue_date AS issueDate, o.expiration_date AS expirationDate, o.notes, o.status, o.appointment_id AS appointmentId, o.used_at AS usedAt FROM medical_orders o JOIN persons p ON p.id = o.person_id WHERE p.care_group_id = ? ORDER BY o.person_id, o.expiration_date',
@@ -140,7 +148,7 @@ export async function GET(request: Request) {
     if (!people.results.length)
       return jsonError('No hay datos para respaldar', 404);
     const backup: BackupData = {
-      schemaVersion: 6,
+      schemaVersion: 7,
       exportedAt: new Date().toISOString(),
       careGroup: { name: group?.name || 'Grupo familiar' },
       persons: people.results.map((person) => ({
@@ -148,6 +156,7 @@ export async function GET(request: Request) {
         archived: Boolean(person.archived),
       })),
       appointments: appointments.results,
+      feedback: feedback.results,
       orders: orders.results,
       medications: hydrateMedications(
         medications.results,
@@ -214,6 +223,14 @@ export async function POST(request: Request) {
       ...item,
       id: appointmentIds.get(item.id),
       personId: personIds.get(item.personId),
+    }));
+    const feedback = backup.feedback.map((item) => ({
+      ...item,
+      id: crypto.randomUUID(),
+      personId: personIds.get(item.personId),
+      appointmentId: item.appointmentId
+        ? appointmentIds.get(item.appointmentId) || null
+        : null,
     }));
     const medications = backup.medications.map((item) => ({
       ...item,
@@ -296,6 +313,11 @@ export async function POST(request: Request) {
         .bind(careGroupId),
       db
         .prepare(
+          'DELETE FROM medical_feedback WHERE person_id IN (SELECT id FROM persons WHERE care_group_id = ?)',
+        )
+        .bind(careGroupId),
+      db
+        .prepare(
           'DELETE FROM prescriptions WHERE person_id IN (SELECT id FROM persons WHERE care_group_id = ?)',
         )
         .bind(careGroupId),
@@ -360,6 +382,17 @@ export async function POST(request: Request) {
                json_extract(value, '$.date'), json_extract(value, '$.time'),
                json_extract(value, '$.place'), json_extract(value, '$.bring'),
                json_extract(value, '$.notes'), json_extract(value, '$.status'), 1
+             FROM json_each(?)`,
+          )
+          .bind(chunk),
+      ),
+      ...jsonChunks(feedback).map((chunk) =>
+        db
+          .prepare(
+            `INSERT INTO medical_feedback (id, person_id, doctor, date, content, appointment_id, version)
+             SELECT json_extract(value, '$.id'), json_extract(value, '$.personId'),
+               json_extract(value, '$.doctor'), json_extract(value, '$.date'),
+               json_extract(value, '$.content'), json_extract(value, '$.appointmentId'), 1
              FROM json_each(?)`,
           )
           .bind(chunk),

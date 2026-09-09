@@ -221,6 +221,27 @@ export const appointments = sqliteTable(
     check('appointments_version_check', sql`${table.version} > 0`),
   ],
 );
+export const medicalFeedback = sqliteTable(
+  'medical_feedback',
+  {
+    id: text('id').primaryKey(),
+    personId: text('person_id')
+      .notNull()
+      .references(() => persons.id),
+    doctor: text('doctor').notNull(),
+    date: text('date').notNull(),
+    content: text('content').notNull(),
+    appointmentId: text('appointment_id').references(() => appointments.id, {
+      onDelete: 'set null',
+    }),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('idx_medical_feedback_person_date').on(table.personId, table.date),
+    index('idx_medical_feedback_appointment').on(table.appointmentId),
+    check('medical_feedback_version_check', sql`${table.version} > 0`),
+  ],
+);
 export const medications = sqliteTable(
   'medications',
   {

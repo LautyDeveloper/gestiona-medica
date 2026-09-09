@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import {
   AppointmentsView,
+  FeedbackView,
   MedicationsView,
   TasksView,
 } from '@/components/app-views';
@@ -54,6 +55,57 @@ describe('filtros de listas', () => {
     expect(screen.queryByText('Clínica')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /Realizados/ }));
     expect(screen.getByText('Clínica')).toBeInTheDocument();
+  });
+
+  it('ofrece cargar una devolución desde el turno y la muestra vinculada', async () => {
+    const onFeedback = vi.fn();
+    const appointment = {
+      id: '1',
+      personId,
+      specialty: 'Cardiología',
+      doctor: 'Dra. A',
+      date: '2026-09-01',
+      time: '10:00',
+      place: 'Hospital',
+      bring: 'DNI',
+      notes: '',
+      status: 'Próximo' as const,
+    };
+    const { rerender } = render(
+      <AppointmentsView
+        items={[appointment]}
+        onNew={noop}
+        onEdit={noop}
+        onComplete={noop}
+        onDelete={noop}
+        onFeedback={onFeedback}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Poner devolución' }),
+    );
+    expect(onFeedback).toHaveBeenCalledWith(appointment);
+
+    rerender(
+      <FeedbackView
+        items={[
+          {
+            id: 'f1',
+            personId,
+            doctor: 'Dra. A',
+            date: '2026-09-01',
+            content: 'Continuar tratamiento.',
+            appointmentId: appointment.id,
+          },
+        ]}
+        appointments={[appointment]}
+        onNew={noop}
+        onEdit={noop}
+        onDelete={noop}
+      />,
+    );
+    expect(screen.getByText('Continuar tratamiento.')).toBeInTheDocument();
+    expect(screen.getByText(/Turno de Cardiología/)).toBeInTheDocument();
   });
 
   it('abre medicamentos activos y permite ver inactivos', async () => {

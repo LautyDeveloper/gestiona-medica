@@ -4,6 +4,7 @@ import {
   ClipboardCheck,
   ClipboardPlus,
   FileText,
+  MessageSquareText,
   Home,
   Pill,
   Users,
@@ -12,6 +13,7 @@ import type {
   Appointment,
   Entity,
   MedicalOrder,
+  MedicalFeedback,
   MedicalTask,
   Medication,
   Prescription,
@@ -37,6 +39,12 @@ export const navItems: {
     label: 'Turnos',
     icon: CalendarDays,
     activeClass: 'bg-appointment/10 text-appointment ring-appointment/15',
+  },
+  {
+    id: 'feedback',
+    label: 'Devoluciones',
+    icon: MessageSquareText,
+    activeClass: 'bg-primary/10 text-primary ring-primary/15',
   },
   {
     id: 'orders',
@@ -87,6 +95,12 @@ export const headers: Record<
     action: 'Nuevo turno',
     entity: 'appointment',
   },
+  feedback: {
+    title: 'Devoluciones',
+    eyebrow: 'Indicaciones de los médicos',
+    action: 'Nueva devolución',
+    entity: 'feedback',
+  },
   orders: {
     title: 'Órdenes',
     eyebrow: 'Indicaciones para sacar turno',
@@ -117,6 +131,7 @@ export const headers: Record<
 
 export type RecordValue =
   | Appointment
+  | MedicalFeedback
   | MedicalOrder
   | Medication
   | Prescription

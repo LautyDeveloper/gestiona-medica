@@ -3,6 +3,7 @@ import {
   appointmentSchema,
   backupImportSchema,
   backupSchema,
+  feedbackSchema,
   medicationSchema,
   orderSchema,
   personSchema,
@@ -147,6 +148,24 @@ describe('validaciones', () => {
       }).success,
     ).toBe(true);
   });
+  it('valida una devolución con turno opcional', () => {
+    expect(
+      feedbackSchema.safeParse({
+        doctor: 'Dra. Pérez',
+        date: '2026-09-01',
+        content: 'Continuar el tratamiento y volver en un mes.',
+        appointmentId: recordId,
+      }).success,
+    ).toBe(true);
+    expect(
+      feedbackSchema.safeParse({
+        doctor: '',
+        date: '2026-09-01',
+        content: '',
+        appointmentId: null,
+      }).success,
+    ).toBe(false);
+  });
   it('valida órdenes y recetas con vencimiento posterior a la emisión', () => {
     const dates = { issueDate: '2026-08-01', expirationDate: '2026-09-01' };
     expect(
@@ -224,7 +243,7 @@ describe('respaldo multi-persona', () => {
 
   it('acepta una copia íntegra con perfiles activos y archivados', () =>
     expect(backupSchema.safeParse(valid).success).toBe(true));
-  it('convierte respaldos de Sprint 1 a versión 6', () => {
+  it('convierte respaldos de Sprint 1 a la versión actual', () => {
     const legacy = {
       schemaVersion: 1,
       exportedAt: valid.exportedAt,
@@ -240,7 +259,8 @@ describe('respaldo multi-persona', () => {
       tasks: [],
     };
     const parsed = backupImportSchema.parse(legacy);
-    expect(parsed.schemaVersion).toBe(6);
+    expect(parsed.schemaVersion).toBe(7);
+    expect(parsed.feedback).toEqual([]);
     expect(parsed.persons).toEqual([{ ...legacy.person, archived: false }]);
     expect(parsed.orders).toEqual([]);
     expect(parsed.prescriptions).toEqual([]);

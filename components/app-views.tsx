@@ -14,6 +14,7 @@ import {
   Trash2,
   Download,
   PackagePlus,
+  MessageSquareText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,6 +25,7 @@ import {
 import type {
   AppData,
   Appointment,
+  MedicalFeedback,
   MedicalTask,
   Medication,
   Section,
@@ -51,6 +53,7 @@ export function HomeView({
     .slice(0, 4);
   if (
     data.appointments.length === 0 &&
+    data.feedback.length === 0 &&
     data.orders.length === 0 &&
     data.medications.length === 0 &&
     data.prescriptions.length === 0 &&
@@ -241,6 +244,7 @@ export function AppointmentsView({
   onDelete,
   onExport,
   onExportOne,
+  onFeedback,
 }: {
   items: Appointment[];
   onNew: () => void;
@@ -249,6 +253,7 @@ export function AppointmentsView({
   onDelete: (id: string) => void;
   onExport?: () => void;
   onExportOne?: (item: Appointment) => void;
+  onFeedback?: (item: Appointment) => void;
 }) {
   const [filter, setFilter] = useState<Appointment['status']>('Próximo');
   const visible = items.filter((item) => item.status === filter);
@@ -341,6 +346,11 @@ export function AppointmentsView({
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 lg:justify-end">
+                {onFeedback && (
+                  <Button variant="outline" onClick={() => onFeedback(item)}>
+                    <MessageSquareText /> Poner devolución
+                  </Button>
+                )}
                 {item.status === 'Próximo' && onExportOne && (
                   <Button variant="outline" onClick={() => onExportOne(item)}>
                     <CalendarPlus /> Calendario
@@ -360,6 +370,80 @@ export function AppointmentsView({
                   variant="ghost"
                   size="icon"
                   aria-label={`Eliminar turno de ${item.specialty}`}
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() => onDelete(item.id)}
+                >
+                  <Trash2 />
+                </Button>
+              </div>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+export function FeedbackView({
+  items,
+  appointments,
+  onNew,
+  onEdit,
+  onDelete,
+}: {
+  items: MedicalFeedback[];
+  appointments: Appointment[];
+  onNew: () => void;
+  onEdit: (item: MedicalFeedback) => void;
+  onDelete: (id: string) => void;
+}) {
+  const appointmentById = new Map(
+    appointments.map((appointment) => [appointment.id, appointment]),
+  );
+  return (
+    <div className="page-rise space-y-4">
+      {items.length === 0 && (
+        <EmptyState
+          icon={<MessageSquareText />}
+          title="No hay devoluciones cargadas"
+          text="Guardá las indicaciones que dio el médico después de una consulta."
+          action={onNew}
+        />
+      )}
+      {items.map((item) => {
+        const appointment = item.appointmentId
+          ? appointmentById.get(item.appointmentId)
+          : undefined;
+        return (
+          <article
+            key={item.id}
+            className="app-surface interactive-surface rounded-2xl border-l-4 border-l-primary p-5"
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-lg font-semibold">{item.doctor}</h3>
+                  <StatusBadge tone="neutral">
+                    {formatDate(item.date)}
+                  </StatusBadge>
+                </div>
+                {appointment && (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Turno de {appointment.specialty} · {appointment.time}
+                  </p>
+                )}
+                <p className="mt-4 whitespace-pre-wrap text-sm leading-6">
+                  {item.content}
+                </p>
+              </div>
+              <div className="flex shrink-0 justify-end gap-1">
+                <Button variant="ghost" onClick={() => onEdit(item)}>
+                  <Pencil /> Editar
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Eliminar devolución de ${item.doctor}`}
                   className="text-muted-foreground hover:text-destructive"
                   onClick={() => onDelete(item.id)}
                 >

@@ -171,6 +171,14 @@ export const appointmentSchema = z.object({
   status: z.enum(['Próximo', 'Realizado', 'Cancelado']).default('Próximo'),
 });
 
+export const feedbackSchema = z.object({
+  personId: z.uuid().optional(),
+  doctor: cleanText('El médico', 120),
+  date: isoDate,
+  content: cleanText('La devolución', 4000),
+  appointmentId: z.uuid().nullable().default(null),
+});
+
 export const medicationSchema = z
   .object({
     personId: z.uuid().optional(),
@@ -318,6 +326,7 @@ export const taskSchema = z.object({
 
 export const entitySchema = z.enum([
   'appointment',
+  'feedback',
   'order',
   'medication',
   'prescription',
@@ -326,6 +335,7 @@ export const entitySchema = z.enum([
 
 export const recordSchemas = {
   appointment: appointmentSchema,
+  feedback: feedbackSchema,
   order: orderSchema,
   medication: medicationSchema,
   prescription: prescriptionSchema,
@@ -337,6 +347,10 @@ const personBackupSchema = personBackupV1Schema.extend({
   archived: z.boolean().default(false),
 });
 const appointmentBackupSchema = appointmentSchema.extend({
+  id: z.uuid(),
+  personId: z.uuid(),
+});
+const feedbackBackupSchema = feedbackSchema.extend({
   id: z.uuid(),
   personId: z.uuid(),
 });
@@ -667,6 +681,41 @@ export const backupV6Schema = z
       });
   });
 
+export const backupV7Schema = z
+  .object({
+    schemaVersion: z.literal(7),
+    exportedAt: z.iso.datetime(),
+    careGroup: z.object({ name: cleanText('El nombre del grupo', 120) }),
+    persons: z.array(personBackupSchema).min(1).max(1000),
+    ...backupRecordsSchema,
+    tasks: z.array(taskBackupSchema).max(10000),
+    orders: z.array(orderBackupSchema).max(10000),
+    prescriptions: z.array(prescriptionBackupSchema).max(10000),
+    feedback: z.array(feedbackBackupSchema).max(10000),
+    medicationIntakes: z.array(medicationIntakeBackupSchema).max(100000),
+    medicationStockMovements: z
+      .array(medicationStockMovementBackupSchema)
+      .max(100000),
+  })
+  .superRefine((backup, context) => {
+    const people = new Set(backup.persons.map((person) => person.id));
+    const appointments = new Map(
+      backup.appointments.map((item) => [item.id, item.personId]),
+    );
+    if (
+      backup.feedback.some(
+        (item) =>
+          !people.has(item.personId) ||
+          (item.appointmentId &&
+            appointments.get(item.appointmentId) !== item.personId),
+      )
+    )
+      context.addIssue({
+        code: 'custom',
+        message: 'El respaldo contiene devoluciones inválidas',
+      });
+  });
+
 export const backupImportSchema = z
   .union([
     backupV1Schema,
@@ -675,9 +724,12 @@ export const backupImportSchema = z
     backupV4Schema,
     backupV5Schema,
     backupV6Schema,
+    backupV7Schema,
   ])
   .transform((backup): BackupData => {
-    if (backup.schemaVersion === 6) return backup;
+    if (backup.schemaVersion === 7) return backup;
+    if (backup.schemaVersion === 6)
+      return { ...backup, schemaVersion: 7 as const, feedback: [] };
     const emptyMedicationHistory = {
       medicationIntakes: [],
       medicationStockMovements: [],
@@ -685,13 +737,15 @@ export const backupImportSchema = z
     if (backup.schemaVersion === 5)
       return {
         ...backup,
-        schemaVersion: 6 as const,
+        schemaVersion: 7 as const,
+        feedback: [],
         ...emptyMedicationHistory,
       };
     if (backup.schemaVersion === 4)
       return {
         ...backup,
-        schemaVersion: 6 as const,
+        schemaVersion: 7 as const,
+        feedback: [],
         tasks: backup.tasks.map((task) => ({
           ...task,
           visibleToElder: false,
@@ -701,7 +755,8 @@ export const backupImportSchema = z
     if (backup.schemaVersion === 3)
       return {
         ...backup,
-        schemaVersion: 6 as const,
+        schemaVersion: 7 as const,
+        feedback: [],
         tasks: backup.tasks.map((task) => ({
           ...task,
           visibleToElder: false,
@@ -713,7 +768,8 @@ export const backupImportSchema = z
     if (backup.schemaVersion === 2)
       return {
         ...backup,
-        schemaVersion: 6 as const,
+        schemaVersion: 7 as const,
+        feedback: [],
         tasks: backup.tasks.map((task) => ({
           ...task,
           visibleToElder: false,
@@ -724,7 +780,8 @@ export const backupImportSchema = z
         ...emptyMedicationHistory,
       };
     return {
-      schemaVersion: 6 as const,
+      schemaVersion: 7 as const,
+      feedback: [],
       exportedAt: backup.exportedAt,
       careGroup: { name: 'Grupo restaurado' },
       persons: [{ ...backup.person, archived: false }],

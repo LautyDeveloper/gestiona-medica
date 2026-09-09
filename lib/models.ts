@@ -1,6 +1,7 @@
 export type Section =
   | 'home'
   | 'appointments'
+  | 'feedback'
   | 'orders'
   | 'medications'
   | 'prescriptions'
@@ -9,6 +10,7 @@ export type Section =
   | 'group';
 export type Entity =
   | 'appointment'
+  | 'feedback'
   | 'order'
   | 'medication'
   | 'prescription'
@@ -131,6 +133,15 @@ export interface Appointment {
   status: 'Próximo' | 'Realizado' | 'Cancelado';
   version?: number;
 }
+export interface MedicalFeedback {
+  id: string;
+  personId: string;
+  doctor: string;
+  date: string;
+  content: string;
+  appointmentId: string | null;
+  version?: number;
+}
 export interface Medication {
   id: string;
   personId: string;
@@ -241,6 +252,7 @@ export interface MedicalTask {
 export interface AppData {
   person: Person | null;
   appointments: Appointment[];
+  feedback: MedicalFeedback[];
   orders: MedicalOrder[];
   medications: Medication[];
   prescriptions: Prescription[];
@@ -268,11 +280,12 @@ export interface BackupDataV1 {
 }
 
 export interface BackupData {
-  schemaVersion: 6;
+  schemaVersion: 7;
   exportedAt: string;
   careGroup: { name: string };
   persons: Omit<Person, 'careGroupId' | 'version' | 'access'>[];
   appointments: Omit<Appointment, 'version'>[];
+  feedback: Omit<MedicalFeedback, 'version'>[];
   orders: Omit<MedicalOrder, 'version'>[];
   medications: Omit<Medication, 'version'>[];
   medicationIntakes: MedicationIntake[];

@@ -59,6 +59,7 @@ const anaData: AppData = {
       status: 'Próximo',
     },
   ],
+  feedback: [],
   orders: [],
   medications: [],
   prescriptions: [],
@@ -67,6 +68,7 @@ const anaData: AppData = {
 const luisData: AppData = {
   person: people[1],
   appointments: [],
+  feedback: [],
   orders: [],
   medications: [],
   prescriptions: [],
