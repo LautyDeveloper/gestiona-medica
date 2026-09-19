@@ -65,6 +65,17 @@ export interface AlertsData {
   unreadCount: number;
 }
 
+export type PushPermissionState =
+  | 'unsupported'
+  | 'blocked'
+  | 'available'
+  | 'subscribed';
+
+export interface PushSubscriptionStatus {
+  state: PushPermissionState;
+  configured: boolean;
+}
+
 export interface AppUser {
   id: string;
   username: string;

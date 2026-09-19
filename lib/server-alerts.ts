@@ -21,7 +21,7 @@ import {
   type RawScheduleTime,
 } from '@/lib/server-medications';
 
-type AlertContext = {
+export type AlertContext = {
   user: AppUser;
   careGroupId: string;
   personId: string | null;
@@ -217,6 +217,14 @@ export async function loadAlertContext(
   requestedGroupId?: string,
 ): Promise<AlertContext> {
   const scope = await resolveScope(request, requestedGroupId);
+  return loadAlertContextForScope(scope);
+}
+
+export async function loadAlertContextForScope(scope: {
+  user: AppUser;
+  careGroupId: string;
+  personId: string | null;
+}): Promise<AlertContext> {
   const db = getD1();
   const [sources, preferences, states] = await Promise.all([
     loadSources(scope.user, scope.careGroupId, scope.personId),
@@ -255,6 +263,37 @@ export async function loadAlertContext(
     sources,
     states: states.results,
   };
+}
+
+export async function loadAlertScopesForUser(user: AppUser) {
+  const db = getD1();
+  if (user.userType === 'elder') {
+    const person = await db
+      .prepare(
+        `SELECT p.id, p.care_group_id AS careGroupId
+         FROM person_access pa JOIN persons p ON p.id = pa.person_id
+         WHERE pa.user_id = ? AND p.archived = 0`,
+      )
+      .bind(user.id)
+      .first<{ id: string; careGroupId: string }>();
+    return person
+      ? [{ user, careGroupId: person.careGroupId, personId: person.id }]
+      : [];
+  }
+  const groups = await db
+    .prepare('SELECT care_group_id AS careGroupId FROM memberships WHERE user_id = ?')
+    .bind(user.id)
+    .all<{ careGroupId: string }>();
+  return groups.results.map(({ careGroupId }) => ({
+    user,
+    careGroupId,
+    personId: null,
+  }));
+}
+
+export async function loadAlertContextsForUser(user: AppUser) {
+  const scopes = await loadAlertScopesForUser(user);
+  return Promise.all(scopes.map(loadAlertContextForScope));
 }
 
 export async function alertsForRequest(

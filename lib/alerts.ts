@@ -98,6 +98,44 @@ function appointmentInstant(date: string, time: string) {
   return new Date(`${date}T${time}:00-03:00`);
 }
 
+export function alertIdForSource(source: AlertSource, now = new Date()) {
+  return makeAlert(source, undefined, now).id;
+}
+
+export function notificationScheduleForSource(
+  source: AlertSource,
+  preferences: AlertPreferences,
+  now = new Date(),
+) {
+  if (source.kind === 'appointment') {
+    if (preferences.appointmentLeadMinutes === -1) return null;
+    return new Date(
+      appointmentInstant(source.date, source.time).getTime() -
+        preferences.appointmentLeadMinutes * 60_000,
+    ).toISOString();
+  }
+  if (source.kind === 'medication-dose') {
+    if (preferences.medicationLeadMinutes === -1) return null;
+    return new Date(
+      new Date(source.scheduledFor).getTime() -
+        preferences.medicationLeadMinutes * 60_000,
+    ).toISOString();
+  }
+  if (source.kind === 'medication-stock')
+    return preferences.medicationStockEnabled ? now.toISOString() : null;
+  const relevantDate =
+    source.kind === 'task' ? source.dueDate : source.expirationDate;
+  const lead =
+    source.kind === 'task'
+      ? preferences.taskLeadDays
+      : preferences.documentLeadDays;
+  if (lead === -1 || !relevantDate) return null;
+  const notifyDate = new Date((dayNumber(relevantDate) - lead) * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  return `${notifyDate}T00:00:00-03:00`;
+}
+
 function stateFor(
   stored: StoredAlertState | undefined,
   now: Date,

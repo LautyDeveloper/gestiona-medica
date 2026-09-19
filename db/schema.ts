@@ -114,6 +114,57 @@ export const alertStates = sqliteTable(
   ],
 );
 
+export const pushSubscriptions = sqliteTable(
+  'push_subscriptions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    endpoint: text('endpoint').notNull(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    lastSuccessAt: text('last_success_at'),
+  },
+  (table) => [
+    uniqueIndex('idx_push_subscriptions_endpoint').on(table.endpoint),
+    index('idx_push_subscriptions_user').on(table.userId),
+  ],
+);
+
+export const pushDeliveries = sqliteTable(
+  'push_deliveries',
+  {
+    id: text('id').primaryKey(),
+    subscriptionId: text('subscription_id')
+      .notNull()
+      .references(() => pushSubscriptions.id, { onDelete: 'cascade' }),
+    alertKey: text('alert_key').notNull(),
+    phase: text('phase').notNull(),
+    status: text('status').notNull(),
+    scheduledAt: text('scheduled_at').notNull(),
+    attemptedAt: text('attempted_at').notNull(),
+    deliveredAt: text('delivered_at'),
+  },
+  (table) => [
+    uniqueIndex('idx_push_deliveries_once').on(
+      table.subscriptionId,
+      table.alertKey,
+      table.phase,
+    ),
+    index('idx_push_deliveries_status_scheduled').on(
+      table.status,
+      table.scheduledAt,
+    ),
+    check(
+      'push_deliveries_status_check',
+      sql`${table.status} IN ('claimed', 'sent', 'skipped')`,
+    ),
+  ],
+);
+
 export const loginRateLimits = sqliteTable(
   'login_rate_limits',
   {
