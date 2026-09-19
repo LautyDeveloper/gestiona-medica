@@ -296,7 +296,12 @@ function OrganizerContent() {
       const session = await requestJson<SessionData>('/api/session');
       setSessionUser(session.user);
       setGroups(session.groups);
-      const group = session.groups[0];
+      const deepLink = new URLSearchParams(window.location.search);
+      const requestedGroupId = deepLink.get('careGroupId');
+      const requestedPersonId = deepLink.get('personId');
+      const group =
+        session.groups.find((item) => item.id === requestedGroupId) ||
+        session.groups[0];
       if (!group) {
         setPeople([]);
         setInitialLoading(false);
@@ -311,13 +316,19 @@ function OrganizerContent() {
       const saved = window.localStorage.getItem(
         `${ACTIVE_PERSON_KEY}:${group.id}`,
       );
-      const selected = chooseActivePerson(nextPeople, saved);
+      const selected =
+        nextPeople.find((person) => person.id === requestedPersonId) ||
+        chooseActivePerson(nextPeople, saved);
       if (selected) await selectPerson(selected.id);
       else {
         activePersonIdRef.current = null;
         setActivePersonId(null);
         setData(null);
         window.localStorage.removeItem(ACTIVE_PERSON_KEY);
+      }
+      if (deepLink.get('section') === 'alerts') {
+        setSection('alerts');
+        window.history.replaceState({}, '', '/');
       }
     } catch (error) {
       setLoadError(

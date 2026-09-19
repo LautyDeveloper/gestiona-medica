@@ -1,0 +1,12 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "cerca-notification-dispatcher",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-15",
+  "triggers": {
+    "crons": ["* * * * *"],
+  },
+  "vars": {
+    "CERCA_DISPATCH_URL": "https://example.openai.chatgpt.site",
+  },
+}

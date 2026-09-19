@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ThemeSwitcher } from '@/components/theme-switcher';
 import { requestJson } from '@/lib/client-api';
+import { disablePushForCurrentDevice } from '@/lib/client-push';
 
 type AuthContextValue = { logout: () => Promise<void> };
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -133,8 +134,12 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
   }
 
   async function logout() {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    window.location.assign('/');
+    try {
+      await disablePushForCurrentDevice();
+    } finally {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.assign('/');
+    }
   }
 
   if (mode === 'loading') return <AppLoading />;
