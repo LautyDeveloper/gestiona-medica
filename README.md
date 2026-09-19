@@ -87,8 +87,21 @@ turnos y los pendientes que el cuidador haya decidido compartir.
 La exportación `.ics` permite agregar un turno o la agenda próxima del perfil
 activo a un calendario externo. El archivo incluye únicamente persona,
 especialidad, fecha, hora y lugar; no exporta notas ni indicaciones médicas.
-Estas alertas funcionan mientras se usa Cerca y no son notificaciones push en
-segundo plano.
+Las alertas también pueden llegar como notificaciones Web Push por dispositivo.
+Cada usuario debe habilitarlas desde el Centro de alertas; el contenido visible
+en la pantalla bloqueada omite datos clínicos y muestra solamente la categoría
+del aviso y la persona.
+
+El despacho en segundo plano usa `workers/notification-dispatcher`, un Worker
+separado con un cron por minuto. La aplicación requiere `VAPID_PUBLIC_KEY`,
+`VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` y `NOTIFICATION_DISPATCH_SECRET`. El Worker
+requiere `CERCA_DISPATCH_URL` y el mismo `NOTIFICATION_DISPATCH_SECRET`, que debe
+cargarse con `wrangler secret put` y nunca guardarse en Git. Antes de desplegar,
+reemplazar la URL de ejemplo del archivo `wrangler.jsonc` por la URL real de
+Cerca y ejecutar `npm run notifications:deploy`.
+
+En iPhone y iPad, Web Push requiere agregar Cerca a la pantalla de inicio y
+abrirla desde allí antes de activar las notificaciones.
 
 ## Medicación y tomas
 

@@ -354,6 +354,14 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
     return () => window.cancelAnimationFrame(frame);
   }, [load]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('section') === 'alerts') {
+      setSection('alerts');
+      window.history.replaceState({}, '', '/');
+    }
+  }, []);
+
   const appointments = useMemo(
     () => splitElderAppointments(data?.appointments || []),
     [data?.appointments],

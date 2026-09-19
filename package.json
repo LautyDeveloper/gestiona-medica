@@ -19,10 +19,12 @@
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio",
     "db:migrate:local": "node scripts/local-db.mjs migrate",
-    "db:status:local": "node scripts/local-db.mjs status"
+    "db:status:local": "node scripts/local-db.mjs status",
+    "notifications:deploy": "wrangler deploy --config workers/notification-dispatcher/wrangler.jsonc"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
+    "@block65/webcrypto-web-push": "^2.0.0",
     "@shadcn/react": "0.3.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",

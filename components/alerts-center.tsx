@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/native-select';
 import type { Alert, AlertPreferences, AlertsData } from '@/lib/models';
 import { Switch } from '@/components/ui/switch';
+import { PushNotificationSettings } from '@/components/push-notification-settings';
 
 export type AlertAction =
   | { action: 'read' | 'unread'; alertId: string }
@@ -284,6 +285,8 @@ export function AlertsView({
           })}
         </div>
       </section>
+
+      <PushNotificationSettings />
 
       <section className="space-y-3" aria-label={`Alertas ${filter}`}>
         {visible.map((alert) => (
