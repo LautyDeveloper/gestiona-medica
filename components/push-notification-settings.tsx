@@ -125,7 +125,9 @@ export function PushNotificationSettings() {
             <Smartphone />
           </span>
           <div>
-            <h2 className="font-semibold">Notificaciones en este dispositivo</h2>
+            <h2 className="font-semibold">
+              Notificaciones en este dispositivo
+            </h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               Recibí avisos de turnos, pendientes, vencimientos y medicación
               aunque Cerca esté cerrada.
@@ -133,7 +135,11 @@ export function PushNotificationSettings() {
           </div>
         </div>
         {state === 'subscribed' ? (
-          <Button variant="outline" disabled={busy} onClick={() => void disable()}>
+          <Button
+            variant="outline"
+            disabled={busy}
+            onClick={() => void disable()}
+          >
             {busy ? <LoaderCircle className="animate-spin" /> : <BellOff />}
             Desactivar
           </Button>
@@ -153,20 +159,26 @@ export function PushNotificationSettings() {
           </Button>
         )}
       </div>
-      <p className="mt-4 text-sm text-muted-foreground" role="status">
+      <output className="mt-4 block text-sm text-muted-foreground">
         {!configured &&
           'Las notificaciones todavía no están configuradas en el servidor.'}
-        {configured && state === 'subscribed' &&
+        {configured &&
+          state === 'subscribed' &&
           'Las notificaciones están activas en este dispositivo.'}
-        {configured && state === 'blocked' &&
+        {configured &&
+          state === 'blocked' &&
           'El navegador bloqueó las notificaciones. Podés habilitarlas desde la configuración del sitio.'}
-        {configured && state === 'unsupported' &&
+        {configured &&
+          state === 'unsupported' &&
           'Este navegador no permite recibir notificaciones push.'}
-        {configured && state === 'available' && !iosNeedsInstall &&
+        {configured &&
+          state === 'available' &&
+          !iosNeedsInstall &&
           'La activación requiere tu permiso y se aplica sólo a este dispositivo.'}
-        {configured && iosNeedsInstall &&
+        {configured &&
+          iosNeedsInstall &&
           'En iPhone o iPad, agregá Cerca a la pantalla de inicio y abrila desde allí para activar las notificaciones.'}
-      </p>
+      </output>
       {error && (
         <p className="mt-2 text-sm text-destructive" role="alert">
           {error}

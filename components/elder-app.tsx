@@ -356,10 +356,12 @@ export function ElderApp({ onLogout }: { onLogout: () => Promise<void> }) {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('section') === 'alerts') {
+    if (params.get('section') !== 'alerts') return;
+    const frame = window.requestAnimationFrame(() => {
       setSection('alerts');
       window.history.replaceState({}, '', '/');
-    }
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   const appointments = useMemo(
