@@ -118,7 +118,10 @@ describe('formularios de registros', () => {
         onSave={onSave}
       />,
     );
-    await userEvent.type(screen.getByLabelText(/^Medicamento/), 'Losartán');
+    await userEvent.type(
+      screen.getByLabelText(/Nombre en la receta/),
+      'Losartán',
+    );
     await userEvent.type(
       screen.getByLabelText(/Presentación/),
       'Comprimidos de 50 mg',
@@ -150,6 +153,56 @@ describe('formularios de registros', () => {
       }),
       undefined,
     );
+  });
+
+  it('precarga una receta desde un medicamento sin modificar el tratamiento', async () => {
+    const medication = {
+      id: '22222222-2222-4222-8222-222222222222',
+      personId,
+      name: 'Simultan',
+      dose: '10 mg',
+      frequency: 'Una vez por día',
+      doctor: 'Dra. Pérez',
+      notes: '',
+      active: true,
+      scheduleType: 'unstructured' as const,
+      scheduleTimes: [],
+      startDate: '',
+      endDate: '',
+      intervalMinutes: null,
+      intervalAnchorAt: '',
+      presentation: 'Caja de 30 comprimidos',
+      stockUnit: 'comprimidos',
+      unitsPerIntake: 1,
+      stockQuantity: 20,
+      reorderThreshold: 5,
+    };
+    render(
+      <RecordDialog
+        entity="prescription"
+        personId={personId}
+        value={null}
+        open
+        onOpenChange={vi.fn()}
+        onSave={vi.fn()}
+        medications={[medication]}
+      />,
+    );
+
+    await userEvent.selectOptions(
+      screen.getByLabelText(/Medicamento asociado/),
+      medication.id,
+    );
+    expect(screen.getByLabelText(/Nombre en la receta/)).toHaveValue(
+      'Simultan',
+    );
+    expect(screen.getByLabelText(/Presentación/)).toHaveValue(
+      'Caja de 30 comprimidos',
+    );
+    expect(screen.getByLabelText(/Dosis/)).toHaveValue('10 mg');
+    await userEvent.clear(screen.getByLabelText(/Dosis/));
+    await userEvent.type(screen.getByLabelText(/Dosis/), '20 mg');
+    expect(medication.dose).toBe('10 mg');
   });
 
   it('crea un pendiente válido', async () => {

@@ -17,6 +17,7 @@ import {
   Download,
   PackagePlus,
   MessageSquareText,
+  FilePlus2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -533,6 +534,7 @@ export function MedicationsView({
   onEdit,
   onDelete,
   onRestock,
+  onNewPrescription,
   today,
 }: {
   items: Medication[];
@@ -540,6 +542,7 @@ export function MedicationsView({
   onEdit: EditFn;
   onDelete: (id: string) => void;
   onRestock?: (item: Medication) => void;
+  onNewPrescription?: (item: Medication) => void;
   today?: ReactNode;
 }) {
   const [filter, setFilter] = useState<'active' | 'inactive'>('active');
@@ -622,7 +625,12 @@ export function MedicationsView({
             {item.notes && (
               <p className="mt-2 text-sm text-muted-foreground">{item.notes}</p>
             )}
-            <div className="mt-auto flex justify-end gap-1 pt-5">
+            <div className="mt-auto flex flex-wrap justify-end gap-1 pt-5">
+              {onNewPrescription && (
+                <Button variant="ghost" onClick={() => onNewPrescription(item)}>
+                  <FilePlus2 /> Nueva receta
+                </Button>
+              )}
               {onRestock && item.stockUnit && (
                 <Button variant="ghost" onClick={() => onRestock(item)}>
                   <PackagePlus /> Reponer

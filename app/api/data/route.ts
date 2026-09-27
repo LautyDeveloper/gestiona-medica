@@ -303,11 +303,22 @@ export async function POST(request: Request): Promise<Response> {
     } else if (entity === 'prescription') {
       const item = data as Omit<
         Prescription,
-        'id' | 'personId' | 'status' | 'medicationId' | 'usedAt'
+        'id' | 'personId' | 'status' | 'usedAt'
       >;
+      if (item.medicationId) {
+        const medication = await db
+          .prepare('SELECT id FROM medications WHERE id = ? AND person_id = ?')
+          .bind(item.medicationId, personResult.person.id)
+          .first();
+        if (!medication)
+          return jsonError(
+            'El medicamento asociado no pertenece a esta persona',
+            400,
+          );
+      }
       const result = await db
         .prepare(
-          "INSERT INTO prescriptions (id, person_id, medication_name, presentation, dose, frequency, duration, prescribed_by, issue_date, expiration_date, notes, status, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 1)",
+          "INSERT INTO prescriptions (id, person_id, medication_name, presentation, dose, frequency, duration, prescribed_by, issue_date, expiration_date, notes, status, medication_id, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 1)",
         )
         .bind(
           id,
@@ -321,6 +332,7 @@ export async function POST(request: Request): Promise<Response> {
           item.issueDate,
           item.expirationDate,
           item.notes,
+          item.medicationId,
         )
         .run();
       changes = result.meta.changes;
@@ -519,11 +531,22 @@ export async function PATCH(request: Request): Promise<Response> {
     } else if (entity === 'prescription') {
       const item = data as Omit<
         Prescription,
-        'id' | 'personId' | 'status' | 'medicationId' | 'usedAt'
+        'id' | 'personId' | 'status' | 'usedAt'
       >;
+      if (item.medicationId) {
+        const medication = await db
+          .prepare('SELECT id FROM medications WHERE id = ? AND person_id = ?')
+          .bind(item.medicationId, personResult.person.id)
+          .first();
+        if (!medication)
+          return jsonError(
+            'El medicamento asociado no pertenece a esta persona',
+            400,
+          );
+      }
       const result = await db
         .prepare(
-          'UPDATE prescriptions SET medication_name = ?, presentation = ?, dose = ?, frequency = ?, duration = ?, prescribed_by = ?, issue_date = ?, expiration_date = ?, notes = ?, version = version + 1 WHERE id = ? AND person_id = ? AND version = ?',
+          'UPDATE prescriptions SET medication_name = ?, presentation = ?, dose = ?, frequency = ?, duration = ?, prescribed_by = ?, issue_date = ?, expiration_date = ?, notes = ?, medication_id = ?, version = version + 1 WHERE id = ? AND person_id = ? AND version = ?',
         )
         .bind(
           item.medicationName,
@@ -535,6 +558,7 @@ export async function PATCH(request: Request): Promise<Response> {
           item.issueDate,
           item.expirationDate,
           item.notes,
+          item.medicationId,
           idResult.data,
           personResult.person.id,
           version.data,

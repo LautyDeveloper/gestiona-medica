@@ -18,7 +18,7 @@ const personId = '11111111-1111-4111-8111-111111111111';
 const groupId = '22222222-2222-4222-8222-222222222222';
 const recordId = '33333333-3333-4333-8333-333333333333';
 
-function fakeDb() {
+function fakeDb({ medicationExists = true } = {}) {
   const executed: Array<{ sql: string; values: unknown[] }> = [];
   return {
     executed,
@@ -42,7 +42,11 @@ function fakeDb() {
                 archived: 0,
                 version: 1,
               }
-            : { id: recordId },
+            : sql.includes('FROM medications')
+              ? medicationExists
+                ? { id: recordId }
+                : null
+              : { id: recordId },
         run: async () => {
           executed.push({ sql, values: statement.values });
           return { meta: { changes: 1 } };
@@ -141,6 +145,61 @@ describe('CRUD de órdenes y recetas', () => {
     expect(response.status).toBe(200);
     expect(db.executed[0]?.sql).toContain('UPDATE prescriptions');
     expect(db.executed[0]?.values.at(-1)).toBe(2);
+  });
+
+  it('crea una receta vinculada a un medicamento existente', async () => {
+    const db = fakeDb();
+    mocks.getD1.mockReturnValue(db);
+    const response = await POST(
+      jsonRequest('POST', {
+        entity: 'prescription',
+        personId,
+        careGroupId: groupId,
+        data: {
+          medicationId: recordId,
+          medicationName: 'Simultan',
+          presentation: 'Comprimidos',
+          dose: '10 mg',
+          frequency: 'Diario',
+          duration: '30 días',
+          prescribedBy: 'Dra. Pérez',
+          issueDate: '2026-08-01',
+          expirationDate: '2026-09-01',
+          notes: '',
+        },
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(db.executed[0]?.sql).toContain('medication_id');
+    expect(db.executed[0]?.values).toContain(recordId);
+  });
+
+  it('rechaza asociar una receta a un medicamento de otra persona', async () => {
+    const db = fakeDb({ medicationExists: false });
+    mocks.getD1.mockReturnValue(db);
+    const response = await POST(
+      jsonRequest('POST', {
+        entity: 'prescription',
+        personId,
+        careGroupId: groupId,
+        data: {
+          medicationId: recordId,
+          medicationName: 'Simultan',
+          presentation: 'Comprimidos',
+          dose: '10 mg',
+          frequency: 'Diario',
+          duration: '30 días',
+          prescribedBy: 'Dra. Pérez',
+          issueDate: '2026-08-01',
+          expirationDate: '2026-09-01',
+          notes: '',
+        },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(db.executed).toHaveLength(0);
   });
 
   it('elimina solamente la orden asociada a la persona', async () => {

@@ -14,7 +14,7 @@ import {
   FilterBar,
   StatusBadge,
 } from '@/components/view-primitives';
-import type { MedicalOrder, Prescription } from '@/lib/models';
+import type { MedicalOrder, Medication, Prescription } from '@/lib/models';
 import { formatDate } from '@/lib/format';
 
 type DocumentFilter = 'pending' | 'used' | 'expired';
@@ -169,14 +169,20 @@ export function OrdersView({
 
 export function PrescriptionsView({
   items,
+  medications,
   onNew,
   onEdit,
+  onUse,
+  onAssociate,
   onConvert,
   onDelete,
 }: {
   items: Prescription[];
+  medications: Medication[];
   onNew: () => void;
   onEdit: (item: Prescription) => void;
+  onUse: (item: Prescription) => void;
+  onAssociate: (item: Prescription) => void;
   onConvert: (item: Prescription) => void;
   onDelete: (id: string) => void;
 }) {
@@ -200,6 +206,9 @@ export function PrescriptionsView({
       <div className="grid gap-4 lg:grid-cols-2">
         {visible.map((item) => {
           const expiry = expiryDetails(item);
+          const medication = medications.find(
+            (candidate) => candidate.id === item.medicationId,
+          );
           return (
             <article
               key={item.id}
@@ -216,6 +225,11 @@ export function PrescriptionsView({
               </h3>
               <p className="mt-1 text-sm font-semibold text-prescription">
                 {item.presentation} · {item.dose}
+              </p>
+              <p className="mt-2 text-xs font-medium text-muted-foreground">
+                {medication
+                  ? `Vinculada a ${medication.name}`
+                  : 'Sin medicamento asociado'}
               </p>
               <p className="mt-3 text-sm">
                 {item.frequency} · {item.duration}
@@ -234,9 +248,25 @@ export function PrescriptionsView({
               )}
               <div className="mt-5 flex flex-wrap justify-end gap-1">
                 {documentState(item) === 'pending' && (
-                  <Button variant="secondary" onClick={() => onConvert(item)}>
-                    Agregar a medicamentos <ArrowRight />
-                  </Button>
+                  <>
+                    {item.medicationId ? (
+                      <Button variant="secondary" onClick={() => onUse(item)}>
+                        Marcar como utilizada
+                      </Button>
+                    ) : (
+                      <>
+                        <Button
+                          variant="secondary"
+                          onClick={() => onAssociate(item)}
+                        >
+                          Asociar medicamento
+                        </Button>
+                        <Button variant="ghost" onClick={() => onConvert(item)}>
+                          Crear medicamento <ArrowRight />
+                        </Button>
+                      </>
+                    )}
+                  </>
                 )}
                 <Button variant="ghost" onClick={() => onEdit(item)}>
                   <Pencil /> Editar

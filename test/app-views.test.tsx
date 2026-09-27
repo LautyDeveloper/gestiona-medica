@@ -197,30 +197,32 @@ describe('filtros de listas', () => {
   });
 
   it('abre medicamentos activos y permite ver inactivos', async () => {
+    const onNewPrescription = vi.fn();
+    const activeMedication = {
+      id: '1',
+      personId,
+      name: 'Activo Uno',
+      dose: '1 mg',
+      frequency: 'Diario',
+      doctor: 'Dra. A',
+      notes: '',
+      active: true,
+      scheduleType: 'unstructured' as const,
+      scheduleTimes: [],
+      startDate: '',
+      endDate: '',
+      intervalMinutes: null,
+      intervalAnchorAt: '',
+      presentation: '',
+      stockUnit: '',
+      unitsPerIntake: null,
+      stockQuantity: null,
+      reorderThreshold: null,
+    };
     render(
       <MedicationsView
         items={[
-          {
-            id: '1',
-            personId,
-            name: 'Activo Uno',
-            dose: '1 mg',
-            frequency: 'Diario',
-            doctor: 'Dra. A',
-            notes: '',
-            active: true,
-            scheduleType: 'unstructured',
-            scheduleTimes: [],
-            startDate: '',
-            endDate: '',
-            intervalMinutes: null,
-            intervalAnchorAt: '',
-            presentation: '',
-            stockUnit: '',
-            unitsPerIntake: null,
-            stockQuantity: null,
-            reorderThreshold: null,
-          },
+          activeMedication,
           {
             id: '2',
             personId,
@@ -246,9 +248,12 @@ describe('filtros de listas', () => {
         onNew={noop}
         onEdit={noop}
         onDelete={noop}
+        onNewPrescription={onNewPrescription}
       />,
     );
     expect(screen.getByText('Activo Uno')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Nueva receta/ }));
+    expect(onNewPrescription).toHaveBeenCalledWith(activeMedication);
     await userEvent.click(screen.getByRole('button', { name: /Inactivos/ }));
     expect(screen.getByText('Inactivo Uno')).toBeInTheDocument();
   });
@@ -369,16 +374,83 @@ describe('filtros de listas', () => {
     render(
       <PrescriptionsView
         items={[prescription]}
+        medications={[]}
         onNew={noop}
         onEdit={noop}
+        onUse={noop}
+        onAssociate={noop}
         onConvert={onConvert}
         onDelete={noop}
       />,
     );
     await userEvent.click(
-      screen.getByRole('button', { name: /Agregar a medicamentos/ }),
+      screen.getByRole('button', { name: /Crear medicamento/ }),
     );
     expect(onConvert).toHaveBeenCalledWith(prescription);
+    vi.useRealTimers();
+  });
+
+  it('permite utilizar una receta vinculada sin ofrecer crear otro medicamento', async () => {
+    vi.setSystemTime(new Date('2026-08-31T12:00:00Z'));
+    const medication = {
+      id: 'm1',
+      personId,
+      name: 'Simultan',
+      dose: '10 mg',
+      frequency: 'Diario',
+      doctor: 'Dra. A',
+      notes: '',
+      active: true,
+      scheduleType: 'unstructured' as const,
+      scheduleTimes: [],
+      startDate: '',
+      endDate: '',
+      intervalMinutes: null,
+      intervalAnchorAt: '',
+      presentation: 'Comprimidos',
+      stockUnit: '',
+      unitsPerIntake: null,
+      stockQuantity: null,
+      reorderThreshold: null,
+    };
+    const prescription = {
+      id: 'r1',
+      personId,
+      medicationName: 'Simultan',
+      presentation: 'Comprimidos',
+      dose: '10 mg',
+      frequency: 'Diario',
+      duration: '30 días',
+      prescribedBy: 'Dra. A',
+      issueDate: '2026-08-01',
+      expirationDate: '2026-09-10',
+      notes: '',
+      status: 'pending' as const,
+      medicationId: medication.id,
+      usedAt: null,
+    };
+    const onUse = vi.fn();
+    render(
+      <PrescriptionsView
+        items={[prescription]}
+        medications={[medication]}
+        onNew={noop}
+        onEdit={noop}
+        onUse={onUse}
+        onAssociate={noop}
+        onConvert={noop}
+        onDelete={noop}
+      />,
+    );
+
+    expect(screen.getByText('Vinculada a Simultan')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Crear medicamento/ }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: /Marcar como utilizada/ }),
+    );
+    expect(onUse).toHaveBeenCalledWith(prescription);
     vi.useRealTimers();
   });
 });

@@ -90,6 +90,7 @@ import type {
   MedicationOccurrence,
   MedicationTodayData,
   Appointment,
+  Prescription,
 } from '@/lib/models';
 import { chooseActivePerson } from '@/lib/person-selection';
 import { DEFAULT_ALERT_PREFERENCES } from '@/lib/alerts';
@@ -133,6 +134,12 @@ function OrganizerContent() {
     string,
     unknown
   > | null>(null);
+  const [prescriptionInitialData, setPrescriptionInitialData] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+  const [prescriptionUseTarget, setPrescriptionUseTarget] =
+    useState<Prescription | null>(null);
   const [personDialog, setPersonDialog] = useState<{
     open: boolean;
     person: Person | null;
@@ -385,15 +392,18 @@ function OrganizerContent() {
   function openNew(entity: Entity) {
     setConversion(null);
     setFeedbackInitialData(null);
+    setPrescriptionInitialData(null);
     setDialog({ open: true, entity, value: null });
   }
   function openEdit(entity: Entity, value: RecordValue) {
     setConversion(null);
     setFeedbackInitialData(null);
+    setPrescriptionInitialData(null);
     setDialog({ open: true, entity, value });
   }
   function openAppointmentFeedback(appointment: Appointment) {
     setConversion(null);
+    setPrescriptionInitialData(null);
     setDialog({ open: true, entity: 'feedback', value: null });
     setFeedbackInitialData({
       appointmentId: appointment.id,
@@ -403,6 +413,7 @@ function OrganizerContent() {
   }
   function openConversion(source: ConversionSource) {
     setFeedbackInitialData(null);
+    setPrescriptionInitialData(null);
     const initialData =
       source.entity === 'order'
         ? {
@@ -424,6 +435,19 @@ function OrganizerContent() {
       entity: source.entity === 'order' ? 'appointment' : 'medication',
       value: null,
     });
+  }
+  function openMedicationPrescription(medication: Medication) {
+    setConversion(null);
+    setFeedbackInitialData(null);
+    setPrescriptionInitialData({
+      medicationId: medication.id,
+      medicationName: medication.name,
+      presentation: medication.presentation,
+      dose: medication.dose,
+      frequency: medication.frequency,
+      prescribedBy: medication.doctor,
+    });
+    setDialog({ open: true, entity: 'prescription', value: null });
   }
   function openAddPerson() {
     setManagerOpen(false);
@@ -875,6 +899,41 @@ function OrganizerContent() {
     setConversion(null);
   }
 
+  async function markPrescriptionUsed() {
+    if (!prescriptionUseTarget || busy) return;
+    const personId = activePersonIdRef.current;
+    if (!personId) return;
+    setBusy(true);
+    try {
+      await requestJson('/api/prescriptions/use', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prescriptionId: prescriptionUseTarget.id,
+          personId,
+          careGroupId: activeGroupIdRef.current,
+          version: prescriptionUseTarget.version,
+        }),
+      });
+      setPrescriptionUseTarget(null);
+      await Promise.all([loadPersonData(personId), loadPeople(), loadAlerts()]);
+      toast.add({
+        title: 'Receta utilizada',
+        description: 'Quedó registrado que el medicamento fue retirado.',
+        type: 'success',
+      });
+    } catch (error) {
+      toast.add({
+        title: 'No se pudo utilizar la receta',
+        description:
+          error instanceof Error ? error.message : 'Intentá nuevamente.',
+        type: 'error',
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function update(
     entity: Entity,
     item: RecordValue,
@@ -1276,6 +1335,7 @@ function OrganizerContent() {
                   items={data.medications}
                   onNew={() => openNew('medication')}
                   onEdit={(item) => openEdit('medication', item)}
+                  onNewPrescription={openMedicationPrescription}
                   onRestock={setRestockTarget}
                   today={
                     <MedicationTodayPanel
@@ -1296,8 +1356,11 @@ function OrganizerContent() {
               {section === 'prescriptions' && (
                 <PrescriptionsView
                   items={data.prescriptions}
+                  medications={data.medications}
                   onNew={() => openNew('prescription')}
                   onEdit={(item) => openEdit('prescription', item)}
+                  onUse={setPrescriptionUseTarget}
+                  onAssociate={(item) => openEdit('prescription', item)}
                   onConvert={(item) =>
                     openConversion({ entity: 'prescription', item })
                   }
@@ -1407,7 +1470,7 @@ function OrganizerContent() {
         </DropdownMenu>
       </nav>
       <RecordDialog
-        key={`${dialog.entity}-${dialog.value?.id || conversion?.source.item.id || (typeof feedbackInitialData?.appointmentId === 'string' ? feedbackInitialData.appointmentId : 'new')}-${dialog.open}-${activePerson.id}`}
+        key={`${dialog.entity}-${dialog.value?.id || conversion?.source.item.id || (typeof feedbackInitialData?.appointmentId === 'string' ? feedbackInitialData.appointmentId : typeof prescriptionInitialData?.medicationId === 'string' ? prescriptionInitialData.medicationId : 'new')}-${dialog.open}-${activePerson.id}`}
         entity={dialog.entity}
         personId={activePerson.id}
         value={dialog.value}
@@ -1416,12 +1479,17 @@ function OrganizerContent() {
           setDialog((current) => ({ ...current, open }));
           if (!open) setConversion(null);
           if (!open) setFeedbackInitialData(null);
+          if (!open) setPrescriptionInitialData(null);
         }}
         onSave={conversion ? convertDocument : save}
         initialData={
-          conversion?.initialData || feedbackInitialData || undefined
+          conversion?.initialData ||
+          feedbackInitialData ||
+          prescriptionInitialData ||
+          undefined
         }
         appointments={data?.appointments || []}
+        medications={data?.medications || []}
         canShowToElder={Boolean(activePerson.access)}
       />
       <MedicationRestockDialog
@@ -1464,6 +1532,34 @@ function OrganizerContent() {
           archiveTarget && void changeArchived(archiveTarget, true)
         }
       />
+      <AlertDialog
+        open={Boolean(prescriptionUseTarget)}
+        onOpenChange={(open) => {
+          if (!open && !busy) setPrescriptionUseTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              ¿Marcar la receta como utilizada?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Esto registra que la receta de{' '}
+              {prescriptionUseTarget?.medicationName} ya fue presentada y que el
+              medicamento fue retirado. El tratamiento no se modificará.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={() => void markPrescriptionUsed()}
+            >
+              {busy ? 'Guardando…' : 'Marcar como utilizada'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => {

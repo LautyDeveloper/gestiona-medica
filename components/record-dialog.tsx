@@ -91,6 +91,7 @@ const emptyValues: Record<Entity, Record<string, unknown>> = {
     stockCycle: 1,
   },
   prescription: {
+    medicationId: null,
     medicationName: '',
     presentation: '',
     dose: '',
@@ -184,6 +185,7 @@ export function RecordDialog({
   onSave,
   initialData,
   appointments = [],
+  medications = [],
   canShowToElder = false,
 }: {
   entity: Entity;
@@ -198,6 +200,7 @@ export function RecordDialog({
   ) => Promise<void>;
   initialData?: Record<string, unknown>;
   appointments?: Appointment[];
+  medications?: Medication[];
   canShowToElder?: boolean;
 }) {
   const [form, setForm] = useState<Record<string, unknown>>(() =>
@@ -216,6 +219,29 @@ export function RecordDialog({
   const scheduleTimes = Array.isArray(form.scheduleTimes)
     ? (form.scheduleTimes as string[])
     : [];
+  const selectedMedicationId =
+    typeof form.medicationId === 'string' ? form.medicationId : '';
+  const availablePrescriptionMedications = medications.filter(
+    (medication) => medication.active || medication.id === selectedMedicationId,
+  );
+
+  function selectPrescriptionMedication(medicationId: string) {
+    if (!medicationId) {
+      update('medicationId', null);
+      return;
+    }
+    const medication = medications.find((item) => item.id === medicationId);
+    if (!medication) return;
+    setForm((current) => ({
+      ...current,
+      medicationId: medication.id,
+      medicationName: medication.name,
+      presentation: medication.presentation,
+      dose: medication.dose,
+      frequency: medication.frequency,
+      prescribedBy: medication.doctor,
+    }));
+  }
 
   async function submit(event: { preventDefault: () => void }) {
     event.preventDefault();
@@ -232,7 +258,15 @@ export function RecordDialog({
     }
     setSaving(true);
     try {
-      await onSave(entity, { ...parsed.data, personId }, value?.id);
+      await onSave(
+        entity,
+        {
+          ...parsed.data,
+          personId,
+          ...(value?.version ? { version: value.version } : {}),
+        },
+        value?.id,
+      );
       onOpenChange(false);
     } catch (error) {
       if (error instanceof ApiError && error.details)
@@ -787,7 +821,37 @@ export function RecordDialog({
           )}
           {entity === 'prescription' && (
             <>
-              <Field label="Medicamento" required error={errors.medicationName}>
+              <Field label="Medicamento asociado">
+                <NativeSelect
+                  className="w-full"
+                  value={selectedMedicationId}
+                  onChange={(event) =>
+                    selectPrescriptionMedication(event.target.value)
+                  }
+                >
+                  <NativeSelectOption value="">
+                    No está cargado
+                  </NativeSelectOption>
+                  {availablePrescriptionMedications.map((medication) => (
+                    <NativeSelectOption
+                      key={medication.id}
+                      value={medication.id}
+                    >
+                      {medication.name} · {medication.dose}
+                      {!medication.active ? ' (inactivo)' : ''}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+                <span className="text-xs font-normal text-muted-foreground">
+                  Vinculá las recetas mensuales al tratamiento existente para no
+                  duplicarlo.
+                </span>
+              </Field>
+              <Field
+                label="Nombre en la receta"
+                required
+                error={errors.medicationName}
+              >
                 <Input
                   required
                   value={text('medicationName')}

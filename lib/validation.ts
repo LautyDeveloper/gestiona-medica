@@ -303,6 +303,7 @@ export const orderSchema = documentDates({
 
 export const prescriptionSchema = documentDates({
   personId: z.uuid().optional(),
+  medicationId: z.uuid().nullable().default(null),
   medicationName: cleanText('El medicamento', 120),
   presentation: cleanText('La presentación', 120),
   dose: cleanText('La dosis', 80),
