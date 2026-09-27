@@ -7,6 +7,6 @@
     "crons": ["* * * * *"],
   },
   "vars": {
-    "CERCA_DISPATCH_URL": "https://example.openai.chatgpt.site",
+    "CERCA_DISPATCH_URL": "https://cerca.lautydev.chatgpt.site",
   },
 }
